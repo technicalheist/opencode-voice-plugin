@@ -12,6 +12,22 @@ type CaptureKind = "dictation" | "conversation";
 
 const SPINNER = ["◐", "◓", "◑", "◒"];
 
+function withTimeout<T>(value: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error("timeout")), ms);
+    value.then(
+      (result) => {
+        window.clearTimeout(timer);
+        resolve(result);
+      },
+      (cause) => {
+        window.clearTimeout(timer);
+        reject(cause);
+      },
+    );
+  });
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -38,7 +54,6 @@ export default Plugin.define({
     const [heard, setHeard] = createSignal("");
     const [error, setError] = createSignal("");
     const [starting, setStarting] = createSignal(false);
-    const [ready, setReady] = createSignal(false);
     const [tick, setTick] = createSignal(0);
 
     const spinner = () => SPINNER[tick() % SPINNER.length] ?? "◐";
@@ -149,10 +164,19 @@ export default Plugin.define({
       setStarting(true);
       setError("");
       try {
-        const info = await session.server.client.session.get({ sessionID: session.id });
+        let busy = false;
+        try {
+          const info = await withTimeout(
+            session.server.client.session.get({ sessionID: session.id }),
+            2500,
+          );
+          const time = info.time;
+          busy = Boolean(time.busy && (!time.idle || time.busy > time.idle));
+        } catch {
+          // A slow status check must not block voice input.
+        }
         if (ctx.signal.aborted) return;
-        const time = info.time;
-        if (time.busy && (!time.idle || time.busy > time.idle)) {
+        if (busy) {
           if (conversation()) {
             window.setTimeout(() => {
               if (conversation() && mode() === "idle") void startListening("conversation");
@@ -161,7 +185,10 @@ export default Plugin.define({
           return;
         }
         try {
-          await voice().dictate({ sessionID: session.id, silent: kind === "dictation" });
+          await withTimeout(
+            voice().dictate({ sessionID: session.id, silent: kind === "dictation" }),
+            3000,
+          );
         } catch {
           // The dictation flag is optional; keep recording if an older server does not have it.
         }
@@ -403,7 +430,7 @@ export default Plugin.define({
       id: "mic",
       order: 10,
       show: (): ComposerPillView | undefined => {
-        const loading = !ready() || (starting() && captureKind === "dictation") || micTranscribing();
+        const loading = (starting() && captureKind === "dictation") || micTranscribing();
         if (loading) {
           return {
             label: spinner(),
@@ -442,7 +469,6 @@ export default Plugin.define({
       show: (): ComposerPillView | undefined => {
         const current = mode();
         const loading =
-          !ready() ||
           (starting() && captureKind === "conversation") ||
           (current === "transcribing" && captureKind === "conversation") ||
           current === "working";

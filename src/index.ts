@@ -10,7 +10,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Plugin } from '@opencode/plugin';
 import { synthesizeSpeech } from './kokoro.js';
@@ -48,7 +48,10 @@ interface VoiceSettings {
   speed: number;
 }
 
+const RUNTIME_VERSION = 2;
+
 interface VoiceRuntime {
+  version: number;
   options: ResolvedOptions;
   settings: VoiceSettings;
   player: AudioPlayer;
@@ -239,13 +242,32 @@ async function speakText(
   }
 }
 
+async function resolveTempDir(): Promise<string> {
+  const candidates = [
+    join(tmpdir(), 'opencode-voice-plugin'),
+    join(homedir(), '.cache', 'opencode-voice-plugin'),
+    join(process.cwd(), '.opencode-voice-plugin'),
+  ];
+  for (const dir of candidates) {
+    try {
+      await mkdir(dir, { recursive: true });
+      const probe = join(dir, `.probe-${process.pid}`);
+      await writeFile(probe, '');
+      await rm(probe, { force: true });
+      return dir;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('No writable temp directory is available for voice audio.');
+}
+
 async function createRuntime(
   ctx: { storage: { get: (key: string) => Promise<unknown> } },
   options: ResolvedOptions,
   explicit: boolean,
 ): Promise<VoiceRuntime> {
-  const tempDir = join(tmpdir(), 'opencode-voice-plugin');
-  await mkdir(tempDir, { recursive: true }).catch(() => {});
+  const tempDir = await resolveTempDir();
   await pruneLocks(tempDir);
   const stored = await ctx.storage.get('settings').catch(() => undefined);
   const fileSettings = await readSettingsFile(tempDir);
@@ -259,6 +281,7 @@ async function createRuntime(
   const debug = makeDebug(tempDir, debugEnabled);
 
   const runtime = {
+    version: RUNTIME_VERSION,
     options,
     settings,
     player: new AudioPlayer({
@@ -296,8 +319,14 @@ async function getRuntime(
   options: ResolvedOptions,
   explicit: boolean,
 ): Promise<VoiceRuntime> {
-  globals.__opencodeVoicePluginRuntime ??= createRuntime(ctx, options, explicit);
-  const runtime = await globals.__opencodeVoicePluginRuntime;
+  let runtime: VoiceRuntime | undefined;
+  if (globals.__opencodeVoicePluginRuntime) {
+    runtime = await globals.__opencodeVoicePluginRuntime.catch(() => undefined);
+  }
+  if (!runtime || runtime.version !== RUNTIME_VERSION) {
+    globals.__opencodeVoicePluginRuntime = createRuntime(ctx, options, explicit);
+    runtime = await globals.__opencodeVoicePluginRuntime;
+  }
 
   if (!runtime.explicit && explicit) {
     runtime.options = options;

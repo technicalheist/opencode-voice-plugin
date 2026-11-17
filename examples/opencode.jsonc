@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "/Users/nix/Documents/Projects/thetest/opencode-voice-plugin",
+      "options": {
+        "baseUrl": "https://kokoro.shivrajan.com",
+        "voice": "af_heart",
+        "speed": 1,
+        "speakOnIdle": true,
+        "speakSubagents": true,
+        "debug": true
+      }
+    }
+  ]
+}

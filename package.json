@@ -1,0 +1,43 @@
+{
+  "name": "opencode-voice-plugin",
+  "version": "0.1.0",
+  "description": "Spoken assistant replies for OpenCode, powered by a hosted Kokoro TTS service.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "tts",
+    "voice",
+    "kokoro"
+  ],
+  "license": "MIT",
+  "engines": {
+    "opencode": "^2.2.0"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}

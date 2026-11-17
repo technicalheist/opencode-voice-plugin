@@ -36,6 +36,25 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const NOISE_WORD = /^(music|applause|laughter|noise|silence|inaudible|sound|sounds|beep|beeping)$/i;
+const HALLUCINATION =
+  /^(thank you for watching|thanks for watching|please subscribe.*|subtitles? by .*)$/i;
+
+function speechWords(text: string): string[] {
+  const stripped = text
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, " ")
+    .replace(/[\u266A\u266B\u266C\u2669]/g, " ")
+    .replace(/[^\p{L}\p{N}'\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!stripped || HALLUCINATION.test(stripped)) return [];
+  return stripped.split(" ").filter((word) => word && !NOISE_WORD.test(word));
+}
+
+function usableSpeech(text: string): boolean {
+  return speechWords(text).length >= 2;
+}
+
 async function blobToBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = "";
@@ -235,6 +254,7 @@ export default Plugin.define({
     async function transcribe(blob: Blob, type: string): Promise<void> {
       if (blob.size === 0) {
         setMode("idle");
+        maybeListen();
         return;
       }
       setMode("transcribing");
@@ -245,9 +265,10 @@ export default Plugin.define({
         const result = (await voice().transcribe({ audio, format })) as { text: string };
         if (ctx.signal.aborted) return;
         const text = result.text.trim();
-        if (!text) {
+        if (!usableSpeech(text)) {
           setMode("idle");
           notify("No speech was detected.", "default");
+          maybeListen();
           return;
         }
         setHeard(text);

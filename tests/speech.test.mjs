@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chunkForSpeech, cleanForSpeech, prepareForSpeech } from '../dist/speech.js';
+import { chunkForSpeech, cleanForSpeech, planSpeech, prepareForSpeech } from '../dist/speech.js';
 
 test('cleans markdown, code, links, and paths', () => {
   const input = [
@@ -41,4 +41,24 @@ test('truncates at a sentence boundary', () => {
   const text = 'First sentence. Second sentence. Third sentence.';
   assert.equal(prepareForSpeech(text, 20), 'First sentence.');
   assert.equal(prepareForSpeech(text, 40), 'First sentence. Second sentence.');
+});
+
+test('plans at most two sentences per speech chunk', () => {
+  const text = 'One. Two. Three. Four. Five.';
+  assert.deepEqual(planSpeech(text, 100, 2), ['One. Two.', 'Three. Four.', 'Five.']);
+});
+
+test('keeps one sentence per chunk when asked', () => {
+  const text = 'First sentence. Second sentence. Third sentence.';
+  assert.deepEqual(planSpeech(text, 100, 1), [
+    'First sentence.',
+    'Second sentence.',
+    'Third sentence.',
+  ]);
+});
+
+test('splits a long sentence without punctuation', () => {
+  const chunks = planSpeech('word '.repeat(200), 120, 2);
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks.every((chunk) => chunk.length <= 120));
 });

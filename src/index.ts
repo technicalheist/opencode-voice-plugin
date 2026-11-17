@@ -18,7 +18,7 @@ import { resolveOptions, type ResolvedOptions } from './options.js';
 import { AudioPlayer } from './player.js';
 import { SpeechQueue } from './queue.js';
 import { Voice } from './rpc.js';
-import { chunkForSpeech, prepareForSpeech } from './speech.js';
+import { planSpeech, prepareForSpeech } from './speech.js';
 import { transcribeAudio, whisperStatus } from './transcribe.js';
 
 interface TextPart {
@@ -191,30 +191,35 @@ async function speakText(
   runtime: VoiceRuntime,
   text: string,
   signal: AbortSignal,
+  onStart: () => void,
   tag?: string,
 ): Promise<void> {
   const prepared = prepareForSpeech(text, runtime.options.maxChars);
   if (!prepared) return;
-  const chunks = chunkForSpeech(prepared, runtime.options.chunkChars);
+  const planned = planSpeech(prepared, runtime.options.chunkChars, 2);
+  const lead = planned[0] ? planSpeech(planned[0], runtime.options.chunkChars, 1) : [];
+  const chunks = [...lead, ...planned.slice(1)];
+  if (chunks.length === 0) return;
   const startedAt = Date.now();
   const itemID = randomUUID().slice(0, 8);
   void appendFile(
     join(runtime.tempDir, 'speech.log'),
-    `${new Date().toISOString()} start item=${itemID} tag=${tag ?? '-'} chars=${prepared.length}\n`,
+    `${new Date().toISOString()} start item=${itemID} tag=${tag ?? '-'} chars=${prepared.length} chunks=${chunks.length}\n`,
   ).catch(() => {});
-  for (const chunk of chunks) {
-    if (signal.aborted) return;
+
+  const fetchAudio = async (chunk: string): Promise<Buffer | null> => {
     const shared = await readSettingsFile(runtime.tempDir);
-    if (shared?.enabled === false) return;
-    if (await stopRequested(runtime.tempDir, startedAt)) return;
+    if (shared?.enabled === false) return null;
     const voice = shared?.voice ?? runtime.settings.voice;
     const speed =
-      typeof shared?.speed === 'number' ? Math.min(2, Math.max(0.5, shared.speed)) : runtime.settings.speed;
+      typeof shared?.speed === 'number'
+        ? Math.min(2, Math.max(0.5, shared.speed))
+        : runtime.settings.speed;
     void appendFile(
       join(runtime.tempDir, 'speech.log'),
       `${new Date().toISOString()} request item=${itemID} tag=${tag ?? '-'} voice=${voice} chars=${chunk.length}\n`,
     ).catch(() => {});
-    const audio = await synthesizeSpeech(
+    return synthesizeSpeech(
       chunk,
       {
         baseUrl: runtime.options.baseUrl,
@@ -227,23 +232,44 @@ async function speakText(
       signal,
       (message) => runtime.debug(message),
     );
-    const file = join(runtime.tempDir, `speech-${Date.now()}-${randomUUID()}.wav`);
-    await writeFile(file, audio);
-    const stopPlayback = () => runtime.player.stop();
-    signal.addEventListener('abort', stopPlayback, { once: true });
-    const stopWatch = setInterval(() => {
-      void stopRequested(runtime.tempDir, startedAt).then((stop) => {
-        if (stop) runtime.player.stop();
-      });
-    }, 400);
-    try {
+  };
+
+  const first = chunks[0];
+  let next: Promise<Buffer | null> | null = first ? fetchAudio(first) : null;
+  let played = false;
+  try {
+    for (let index = 0; index < chunks.length; index += 1) {
       if (signal.aborted) return;
-      await runtime.player.play(file);
-    } finally {
-      clearInterval(stopWatch);
-      signal.removeEventListener('abort', stopPlayback);
-      await rm(file, { force: true }).catch(() => {});
+      if (await stopRequested(runtime.tempDir, startedAt)) return;
+      const audio = next ? await next : null;
+      const upcoming = chunks[index + 1];
+      next = upcoming ? fetchAudio(upcoming) : null;
+      if (!audio || signal.aborted) return;
+
+      const file = join(runtime.tempDir, `speech-${Date.now()}-${randomUUID()}.wav`);
+      await writeFile(file, audio);
+      const stopPlayback = () => runtime.player.stop();
+      signal.addEventListener('abort', stopPlayback, { once: true });
+      const stopWatch = setInterval(() => {
+        void stopRequested(runtime.tempDir, startedAt).then((stop) => {
+          if (stop) runtime.player.stop();
+        });
+      }, 400);
+      try {
+        if (signal.aborted) return;
+        if (!played) {
+          played = true;
+          onStart();
+        }
+        await runtime.player.play(file);
+      } finally {
+        clearInterval(stopWatch);
+        signal.removeEventListener('abort', stopPlayback);
+        await rm(file, { force: true }).catch(() => {});
+      }
     }
+  } finally {
+    if (next) await next.catch(() => {});
   }
 }
 
@@ -304,7 +330,7 @@ async function createRuntime(
   } as VoiceRuntime;
 
   runtime.queue = new SpeechQueue(
-    (text, signal, tag) => speakText(runtime, text, signal, tag),
+    (text, signal, onStart, tag) => speakText(runtime, text, signal, onStart, tag),
     (error) => console.error(`[voice] speech failed: ${messageOf(error)}`),
     (state, text) => runtime.emitSpeech?.(state, text),
   );
@@ -379,7 +405,7 @@ export default Plugin.define({
         enabled: runtime.settings.enabled,
         voice: runtime.settings.voice,
         speed: runtime.settings.speed,
-        speaking: runtime.queue.busy,
+        speaking: runtime.queue.speaking,
         player: runtime.player.name,
         modelReady: whisper.ready,
         model: whisper.model,

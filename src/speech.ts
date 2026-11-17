@@ -62,6 +62,39 @@ export function chunkForSpeech(text: string, limit: number): string[] {
   return chunks.filter(Boolean);
 }
 
+export function planSpeech(text: string, limit: number, maxSentences = 2): string[] {
+  const clean = text.trim();
+  if (!clean) return [];
+
+  const sentences = clean.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) ?? [clean];
+  const chunks: string[] = [];
+  let current = "";
+  let count = 0;
+
+  const flush = () => {
+    const value = current.trim();
+    if (value) chunks.push(value);
+    current = "";
+    count = 0;
+  };
+
+  for (const raw of sentences) {
+    const sentence = raw.trim();
+    if (!sentence) continue;
+    if (sentence.length > limit) {
+      flush();
+      chunks.push(...chunkForSpeech(sentence, limit));
+      continue;
+    }
+    if (count >= maxSentences || (current && current.length + 1 + sentence.length > limit)) flush();
+    current = current ? `${current} ${sentence}` : sentence;
+    count += 1;
+  }
+
+  flush();
+  return chunks;
+}
+
 export function prepareForSpeech(text: string, maxChars: number): string {
   const clean = cleanForSpeech(text);
   if (clean.length <= maxChars) return clean;

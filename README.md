@@ -16,6 +16,8 @@ speaking: a microphone for dictation and a waveform for hands-free conversation 
 - Speaks the final assistant message whenever a session goes idle.
 - Speaks completed subagent replies, with a configurable prefix.
 - Speaks each reply exactly once, even when OpenCode loads the plugin for more than one location.
+- Speaks in short batches of at most two sentences and prepares the next batch while the
+  current one plays, so audio starts sooner and continues without long gaps.
 - Adds two icon buttons in the row directly above the composer: a microphone for
   dictation and a waveform for conversation mode.
 - The microphone icon records one request, writes the transcript into the composer,
@@ -103,7 +105,10 @@ supported position.
   seconds of silence, sends the transcript, speaks the answer, and listens again.
 - **Button states:** idle is the icon alone. A spinner means the plugin is starting
   or waiting for the server. Red **Listening** means it is recording. Green
-  **Speaking** means it is reading a reply aloud.
+  **Speaking** means audio is actually playing.
+- **Short sounds are ignored.** A recording needs at least two words to count as
+  speech. Music, noise, and single sounds are dropped instead of sent, and
+  conversation mode keeps listening.
 - **Stop listening:** click the active icon or press the talk shortcut again.
 - **Stop speaking:** use the stop command in the command palette.
 - **Mic shortcut:** `Cmd/Ctrl+Shift+M`.
@@ -127,7 +132,7 @@ The first microphone use asks macOS for permission. Allow OpenCode in
 | `subagentPrefix` | string | `Subtask finished.` | Prefix added to subagent replies. Set to `""` to disable. |
 | `minChars` | number | `2` | Skip cleaned replies shorter than this. |
 | `maxChars` | number | `3000` | Maximum cleaned characters spoken per reply. |
-| `chunkChars` | number | `900` | Maximum characters sent to Kokoro per request. |
+| `chunkChars` | number | `260` | Maximum characters sent to Kokoro per request. Speech is also capped at two sentences per request. |
 | `player` | string | `auto` | Playback command, or `auto` to detect one. |
 | `playerArgs` | string[] | `[]` | Extra arguments passed to the player before the file path. |
 | `timeoutMs` | number | `60000` | Per-request Kokoro timeout. |

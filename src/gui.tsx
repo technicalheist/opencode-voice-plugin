@@ -1,11 +1,5 @@
-import { createSignal } from "solid-js";
-import {
-  Command,
-  ComposerPill,
-  Plugin,
-  type ComposerPillTone,
-  type ComposerPillView,
-} from "@opencode/plugin/gui";
+import { createSignal, Show } from "solid-js";
+import { Command, Plugin, Slot, Style } from "@opencode/plugin/gui";
 import { Voice } from "./rpc.js";
 
 type Mode = "idle" | "listening" | "transcribing" | "working" | "speaking";
@@ -370,75 +364,157 @@ export default Plugin.define({
       })
       .catch(() => {});
 
-    ctx.add(ComposerPill, {
-      id: "mic",
-      order: 10,
-      show: (): ComposerPillView | undefined => {
-        const dictation = captureKind === "dictation";
-        const listening = mode() === "listening" && dictation;
-        const transcribing = mode() === "transcribing" && dictation;
-        const tone: ComposerPillTone | undefined = error()
-          ? "danger"
-          : listening || transcribing
-            ? "warning"
-            : undefined;
-        const label = error()
-          ? "Mic error"
-          : listening
-            ? "Listening…"
-            : transcribing
-              ? "Transcribing…"
-              : "🎤\uFE0E";
-        return {
-          label,
-          tone,
-          title: error() || heard() || "Dictate a message",
-          run: () => {
-            if (error()) {
-              setError("");
-              return;
-            }
-            toggleMic();
-          },
-        };
-      },
-    });
+    const micListening = () => mode() === "listening" && captureKind === "dictation";
+    const micTranscribing = () => mode() === "transcribing" && captureKind === "dictation";
+    const micWarn = () => micListening() || micTranscribing();
 
-    ctx.add(ComposerPill, {
-      id: "conversation",
-      order: 11,
-      show: (): ComposerPillView | undefined => {
-        const current = mode();
-        const conversationCapture = captureKind === "conversation";
-        const speaking = current === "speaking";
-        const listening = current === "listening" && conversationCapture;
-        const transcribing = current === "transcribing" && conversationCapture;
-        const working = current === "working";
-        const on = conversation();
-        const tone: ComposerPillTone | undefined = speaking || on
-          ? "success"
-          : listening || transcribing
-            ? "warning"
-            : undefined;
-        const label = listening
-          ? "Listening…"
-          : transcribing
-            ? "Transcribing…"
-            : speaking
-              ? "Speaking"
-              : working
-                ? "Thinking"
-                : on
-                  ? "Voice mode"
-                  : "Voice";
-        return {
-          icon: "waveform",
-          label,
-          tone,
-          title: on ? "Conversation mode is on" : "Start conversation mode",
-          run: toggleConversation,
-        };
-      },
+    ctx.add(Style, `
+      .ocv-fab {
+        position: fixed;
+        right: 26px;
+        bottom: 112px;
+        z-index: 70;
+        display: flex;
+        gap: 10px;
+        pointer-events: none;
+      }
+      .ocv-fab-button {
+        pointer-events: auto;
+        position: relative;
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+        background: color-mix(in srgb, currentColor 8%, transparent);
+        color: var(--v2-text-base, #6b7280);
+        cursor: pointer;
+        transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease;
+        backdrop-filter: blur(12px);
+      }
+      .ocv-fab-button:hover {
+        transform: translateY(-1px);
+        background: color-mix(in srgb, currentColor 16%, transparent);
+      }
+      .ocv-fab-button:active { transform: scale(.94); }
+      .ocv-fab-button svg { width: 20px; height: 20px; display: block; }
+      .ocv-fab-button.ocv-active {
+        color: #10b981;
+        border-color: color-mix(in srgb, #10b981 45%, transparent);
+        background: color-mix(in srgb, #10b981 14%, transparent);
+      }
+      .ocv-fab-button.ocv-warn {
+        color: #f59e0b;
+        border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+        background: color-mix(in srgb, #f59e0b 14%, transparent);
+      }
+      .ocv-fab-button.ocv-error {
+        color: #ef4444;
+        border-color: color-mix(in srgb, #ef4444 45%, transparent);
+        background: color-mix(in srgb, #ef4444 14%, transparent);
+      }
+      .ocv-fab-button.ocv-listening { animation: ocvPulse 1.15s ease-in-out infinite; }
+      .ocv-fab-button.ocv-working { animation: ocvPulse 1.8s ease-in-out infinite; }
+      .ocv-fab-button.ocv-speaking { animation: ocvGlow 1.2s ease-in-out infinite; }
+      .ocv-fab-button.ocv-transcribing::after {
+        content: "";
+        position: absolute;
+        inset: -3px;
+        border-radius: 999px;
+        border: 2px solid currentColor;
+        border-top-color: transparent;
+        animation: ocvSpin .8s linear infinite;
+      }
+      .ocv-fab-button.ocv-speaking .ocv-wave line {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: ocvWave .7s ease-in-out infinite;
+      }
+      .ocv-fab-button.ocv-speaking .ocv-wave line:nth-child(2) { animation-delay: .08s; }
+      .ocv-fab-button.ocv-speaking .ocv-wave line:nth-child(3) { animation-delay: .16s; }
+      .ocv-fab-button.ocv-speaking .ocv-wave line:nth-child(4) { animation-delay: .24s; }
+      .ocv-fab-button.ocv-speaking .ocv-wave line:nth-child(5) { animation-delay: .32s; }
+      @keyframes ocvPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.12); }
+      }
+      @keyframes ocvGlow {
+        0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #10b981 35%, transparent); }
+        50% { box-shadow: 0 0 0 6px transparent; }
+      }
+      @keyframes ocvSpin { to { transform: rotate(360deg); } }
+      @keyframes ocvWave {
+        0%, 100% { transform: scaleY(.45); opacity: .65; }
+        50% { transform: scaleY(1); opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ocv-fab-button, .ocv-fab-button::after, .ocv-wave line { animation: none !important; }
+      }
+      @media (max-width: 640px) {
+        .ocv-fab { right: 14px; bottom: 92px; }
+      }
+    `);
+
+    ctx.add(Slot, {
+      at: "window.bottom",
+      order: 100,
+      render: () => (
+        <Show when={ctx.sessions.current()}>
+          <div class="ocv-fab">
+            <button
+              type="button"
+              class="ocv-fab-button"
+              classList={{
+                "ocv-warn": micWarn(),
+                "ocv-error": Boolean(error()),
+                "ocv-listening": micListening(),
+                "ocv-transcribing": micTranscribing(),
+              }}
+              aria-label="Dictate a message"
+              aria-pressed={micListening() || micTranscribing()}
+              title={error() || heard() || "Dictate a message"}
+              onClick={() => {
+                if (error()) {
+                  setError("");
+                  return;
+                }
+                toggleMic();
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+                <line x1="8" y1="22" x2="16" y2="22" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="ocv-fab-button"
+              classList={{
+                "ocv-active": conversation() || mode() === "speaking" || mode() === "working",
+                "ocv-listening": mode() === "listening" && captureKind === "conversation",
+                "ocv-transcribing": mode() === "transcribing" && captureKind === "conversation",
+                "ocv-speaking": mode() === "speaking",
+                "ocv-working": conversation() && mode() === "idle",
+              }}
+              aria-label={conversation() ? "Turn off conversation mode" : "Start conversation mode"}
+              aria-pressed={conversation()}
+              title="Conversation mode"
+              onClick={() => toggleConversation()}
+            >
+              <svg class="ocv-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="4" y1="10" x2="4" y2="14" />
+                <line x1="8" y1="6" x2="8" y2="18" />
+                <line x1="12" y1="3" x2="12" y2="21" />
+                <line x1="16" y1="6" x2="16" y2="18" />
+                <line x1="20" y1="10" x2="20" y2="14" />
+              </svg>
+            </button>
+          </div>
+        </Show>
+      ),
     });
 
     ctx.add(

@@ -7,23 +7,23 @@ Speech-to-text runs locally with Whisper, so your microphone audio never leaves 
 machine.
 
 When a session finishes, the plugin reads the final assistant reply aloud. Subagent
-replies are announced as they finish. In the desktop app, two buttons above the
-composer show when the plugin is listening, transcribing, or speaking: **Mic** for
-dictation and **Voice** for hands-free conversation mode.
+replies are announced as they finish. In the desktop app, two floating icons beside
+the composer show when the plugin is listening, transcribing, or speaking: a
+microphone for dictation and a waveform for hands-free conversation mode.
 
 ## Features
 
 - Speaks the final assistant message whenever a session goes idle.
 - Speaks completed subagent replies, with a configurable prefix.
 - Speaks each reply exactly once, even when OpenCode loads the plugin for more than one location.
-- Adds two voice buttons in the row directly above the composer: **Mic** for
-  dictation and **Voice** for conversation mode.
-- The **Mic** button records one request, writes the transcript into the composer,
+- Adds two floating icon buttons at the bottom-right of the chat: a microphone for
+  dictation and a waveform for conversation mode.
+- The microphone icon records one request, writes the transcript into the composer,
   and keeps the next reply silent. It does not auto-send.
-- The **Voice** button starts the hands-free loop: listen, transcribe, send, speak
-  the answer, and listen again.
-- Both buttons show their state: **Listening**, **Transcribing**, **Thinking**,
-  **Speaking**, or **Voice mode**.
+- The waveform icon starts the hands-free loop: listen, transcribe, send, speak the
+  answer, and listen again.
+- The icons are grey when idle, amber while listening, green while conversation mode
+  is active, and animate while speaking. Errors turn the microphone red.
 - Adds keyboard shortcuts and command-palette entries for talk, voice mode, spoken
   replies, stop, and a test sentence.
 - Adds a `voice_speak` tool so agents can read short messages aloud.
@@ -90,17 +90,17 @@ exports.
 
 ## Using voice input
 
-OpenCode places these two buttons in the row directly above the text area. The
-plugin API does not expose the text area's right edge, so this is the closest
-supported position.
+OpenCode's plugin API does not expose the text area's right edge. The two icons
+float at the bottom-right, beside the text area, which is the closest supported
+position.
 
-- **Mic (dictation):** click **Mic**, speak, and stop. The transcript is inserted
-  into the composer so you can edit it. The plugin does not send it automatically,
-  and the next reply is not spoken.
-- **Voice (conversation):** click **Voice**, or press `Cmd/Ctrl+Shift+U`. Speak
-  naturally. The plugin ends each turn after about 1.3 seconds of silence, sends
-  the transcript, speaks the answer, and listens again.
-- **Stop listening:** click the active button or press the talk shortcut again.
+- **Microphone icon (dictation):** click the microphone, speak, and stop. The
+  transcript is inserted into the composer so you can edit it. The plugin does not
+  send it automatically, and the next reply is not spoken.
+- **Waveform icon (conversation):** click the waveform, or press
+  `Cmd/Ctrl+Shift+U`. Speak naturally. The plugin ends each turn after about 1.3
+  seconds of silence, sends the transcript, speaks the answer, and listens again.
+- **Stop listening:** click the active icon or press the talk shortcut again.
 - **Stop speaking:** use the stop command in the command palette.
 - **Mic shortcut:** `Cmd/Ctrl+Shift+M`.
 
@@ -180,10 +180,10 @@ each child speaks its own reply when it finishes, and the parent speaks its fina
 summary afterwards. A `session.idle` event listener is used automatically when the
 idle hook is unavailable.
 
-The desktop GUI part adds the **Mic** and **Voice** buttons above the composer. It
+The desktop GUI part adds the microphone and waveform icons beside the composer. It
 records with the browser `MediaRecorder`, sends the audio to the server over a typed
 RPC, and either inserts the transcript or sends it as the next prompt. The server
-emits `speaking` and `idle` RPC events, which drive the buttons and the conversation
+emits `speaking` and `idle` RPC events, which drive the icons and the conversation
 loop. Dictation mode tells the server to keep the next reply silent.
 
 OpenCode can load a local plugin for both the project and its `.opencode`

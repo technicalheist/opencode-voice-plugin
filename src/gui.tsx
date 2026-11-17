@@ -3,7 +3,6 @@ import {
   Command,
   ComposerPill,
   Plugin,
-  Style,
   type ComposerPillView,
 } from "@opencode/plugin/gui";
 import { Voice } from "./rpc.js";
@@ -39,6 +38,7 @@ export default Plugin.define({
     const [heard, setHeard] = createSignal("");
     const [error, setError] = createSignal("");
     const [starting, setStarting] = createSignal(false);
+    const [ready, setReady] = createSignal(false);
     const [tick, setTick] = createSignal(0);
 
     const spinner = () => SPINNER[tick() % SPINNER.length] ?? "◐";
@@ -145,6 +145,7 @@ export default Plugin.define({
         notify("Open a session before using voice mode.", "default");
         return;
       }
+      captureKind = kind;
       setStarting(true);
       setError("");
       try {
@@ -159,7 +160,6 @@ export default Plugin.define({
           }
           return;
         }
-        captureKind = kind;
         try {
           await voice().dictate({ sessionID: session.id, silent: kind === "dictation" });
         } catch {
@@ -377,7 +377,8 @@ export default Plugin.define({
 
     const micListening = () => mode() === "listening" && captureKind === "dictation";
     const micTranscribing = () => mode() === "transcribing" && captureKind === "dictation";
-    const micWarn = () => micListening() || micTranscribing();
+    const pulseIcon = () =>
+      Math.floor(tick() / 2) % 2 === 0 ? "outline-wave-audio" : "waveform";
 
     const spinnerTimer = window.setInterval(() => setTick((value) => value + 1), 150);
     const statusTimer = window.setInterval(() => {
@@ -398,70 +399,25 @@ export default Plugin.define({
         .catch(() => {});
     }, 2000);
 
-    ctx.add(Style, `
-      [aria-label="Dictate a message"] {
-        transition: transform .18s ease, filter .18s ease;
-      }
-      [aria-label="Dictate a message"]:hover {
-        filter: drop-shadow(0 0 4px #f59e0b);
-      }
-      [aria-label="Dictate a message"]:active {
-        transform: scale(.94);
-      }
-      [aria-label="Dictate a message"][data-tone="warning"],
-      [aria-label="Dictate: listening"],
-      [aria-label="Dictate: transcribing"] {
-        animation: ocvMicPulse 1.15s ease-in-out infinite;
-        filter: drop-shadow(0 0 4px #f59e0b);
-      }
-      [aria-label="Dictate a message"][data-tone="danger"],
-      [aria-label="Dictate error"] {
-        filter: drop-shadow(0 0 4px #ef4444);
-      }
-      [aria-label="Voice conversation mode"] {
-        transition: transform .18s ease;
-      }
-      [aria-label="Voice conversation mode"]:hover {
-        transform: scale(1.06);
-      }
-      [aria-label="Voice conversation mode"]:active {
-        transform: scale(.94);
-      }
-      [aria-label="Voice conversation mode"][data-tone="success"] {
-        animation: ocvTalkPulse 1.8s ease-in-out infinite;
-      }
-      [aria-label="Voice conversation mode"][data-tone="warning"] {
-        animation: ocvTalkPulse 1.1s ease-in-out infinite;
-      }
-      @keyframes ocvMicPulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.12); }
-      }
-      @keyframes ocvTalkPulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.07); }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        [aria-label="Dictate a message"], [aria-label="Voice conversation mode"] {
-          animation: none !important;
-        }
-      }
-    `);
-
     ctx.add(ComposerPill, {
       id: "mic",
       order: 10,
       show: (): ComposerPillView | undefined => {
-        const loading = micWarn() || starting();
+        const loading = !ready() || (starting() && captureKind === "dictation") || micTranscribing();
         if (loading) {
           return {
             label: spinner(),
             tone: "warning",
-            title: starting()
-              ? "Dictate: starting"
-              : micListening()
-                ? "Dictate: listening"
-                : "Dictate: transcribing",
+            title: micTranscribing() ? "Dictate: transcribing" : "Dictate: starting",
+            run: () => toggleMic(),
+          };
+        }
+        if (micListening()) {
+          return {
+            icon: "outline-audio",
+            label: "Listening",
+            tone: "danger",
+            title: "Dictate: listening",
             run: () => toggleMic(),
           };
         }
@@ -485,7 +441,11 @@ export default Plugin.define({
       order: 11,
       show: (): ComposerPillView | undefined => {
         const current = mode();
-        const loading = current === "listening" || current === "transcribing" || current === "working" || starting();
+        const loading =
+          !ready() ||
+          (starting() && captureKind === "conversation") ||
+          (current === "transcribing" && captureKind === "conversation") ||
+          current === "working";
         if (loading) {
           return {
             label: spinner(),
@@ -494,11 +454,27 @@ export default Plugin.define({
             run: toggleConversation,
           };
         }
-        const live = current === "speaking" || conversation();
+        if (current === "speaking") {
+          return {
+            icon: pulseIcon(),
+            label: "Speaking",
+            tone: "success",
+            title: "Voice conversation mode",
+            run: toggleConversation,
+          };
+        }
+        if (current === "listening" && captureKind === "conversation") {
+          return {
+            icon: pulseIcon(),
+            label: "Listening",
+            tone: "danger",
+            title: "Voice conversation mode",
+            run: toggleConversation,
+          };
+        }
         return {
-          icon: live && Math.floor(tick() / 2) % 2 === 0 ? "outline-wave-audio" : "waveform",
+          icon: "waveform",
           label: "",
-          tone: live ? "success" : undefined,
           title: "Voice conversation mode",
           run: toggleConversation,
         };

@@ -22,10 +22,9 @@ speaking: a microphone for dictation and a waveform for hands-free conversation 
   and keeps the next reply silent. It does not auto-send.
 - The waveform icon starts the hands-free loop: listen, transcribe, send, speak the
   answer, and listen again.
-- The icons are grey when idle and green while conversation mode is active. Both
-  show a small spinner while starting, listening, or turning speech into text; the
-  voice icon changes shape while active and speaking. Errors add a red glow to the
-  microphone.
+- The icons are neutral when idle, with no text. A small spinner appears while the
+  plugin starts or waits for the server. Red **Listening** shows while recording;
+  green **Speaking** shows while a reply is read aloud.
 - Adds keyboard shortcuts and command-palette entries for talk, voice mode, spoken
   replies, stop, and a test sentence.
 - Adds a `voice_speak` tool so agents can read short messages aloud.
@@ -102,6 +101,9 @@ supported position.
 - **Waveform icon (conversation):** click the waveform, or press
   `Cmd/Ctrl+Shift+U`. Speak naturally. The plugin ends each turn after about 1.3
   seconds of silence, sends the transcript, speaks the answer, and listens again.
+- **Button states:** idle is the icon alone. A spinner means the plugin is starting
+  or waiting for the server. Red **Listening** means it is recording. Green
+  **Speaking** means it is reading a reply aloud.
 - **Stop listening:** click the active icon or press the talk shortcut again.
 - **Stop speaking:** use the stop command in the command palette.
 - **Mic shortcut:** `Cmd/Ctrl+Shift+M`.

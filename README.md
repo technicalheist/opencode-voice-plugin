@@ -7,16 +7,16 @@ Speech-to-text runs locally with Whisper, so your microphone audio never leaves 
 machine.
 
 When a session finishes, the plugin reads the final assistant reply aloud. Subagent
-replies are announced as they finish. In the desktop app, two floating icons beside
-the composer show when the plugin is listening, transcribing, or speaking: a
-microphone for dictation and a waveform for hands-free conversation mode.
+replies are announced as they finish. In the desktop app, two icon buttons in the row
+directly above the composer show when the plugin is listening, transcribing, or
+speaking: a microphone for dictation and a waveform for hands-free conversation mode.
 
 ## Features
 
 - Speaks the final assistant message whenever a session goes idle.
 - Speaks completed subagent replies, with a configurable prefix.
 - Speaks each reply exactly once, even when OpenCode loads the plugin for more than one location.
-- Adds two floating icon buttons at the bottom-right of the chat: a microphone for
+- Adds two icon buttons in the row directly above the composer: a microphone for
   dictation and a waveform for conversation mode.
 - The microphone icon records one request, writes the transcript into the composer,
   and keeps the next reply silent. It does not auto-send.
@@ -90,9 +90,9 @@ exports.
 
 ## Using voice input
 
-OpenCode's plugin API does not expose the text area's right edge. The two icons
-float at the bottom-right, beside the text area, which is the closest supported
-position.
+OpenCode places these two icon buttons in the row directly above the text area. The
+plugin API does not expose the text area's right edge, so this is the closest
+supported position.
 
 - **Microphone icon (dictation):** click the microphone, speak, and stop. The
   transcript is inserted into the composer so you can edit it. The plugin does not
@@ -180,7 +180,7 @@ each child speaks its own reply when it finishes, and the parent speaks its fina
 summary afterwards. A `session.idle` event listener is used automatically when the
 idle hook is unavailable.
 
-The desktop GUI part adds the microphone and waveform icons beside the composer. It
+The desktop GUI part adds the microphone and waveform icons above the composer. It
 records with the browser `MediaRecorder`, sends the audio to the server over a typed
 RPC, and either inserts the transcript or sends it as the next prompt. The server
 emits `speaking` and `idle` RPC events, which drive the icons and the conversation

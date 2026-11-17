@@ -5,6 +5,8 @@ interface QueueItem {
   reject: (error: unknown) => void;
 }
 
+export type SpeechState = "speaking" | "idle";
+
 export class SpeechQueue {
   private items: QueueItem[] = [];
   private current: { controller: AbortController } | null = null;
@@ -13,7 +15,16 @@ export class SpeechQueue {
   constructor(
     private readonly handler: (text: string, signal: AbortSignal, tag?: string) => Promise<void>,
     private readonly onError: (error: unknown) => void,
+    private readonly onState?: (state: SpeechState, text?: string) => void,
   ) {}
+
+  private notify(state: SpeechState, text?: string): void {
+    try {
+      this.onState?.(state, text);
+    } catch {
+      return;
+    }
+  }
 
   get busy(): boolean {
     return this.current !== null || this.items.length > 0;
@@ -35,6 +46,7 @@ export class SpeechQueue {
     const pending = this.items.splice(0);
     for (const item of pending) item.resolve();
     if (this.current) this.current.controller.abort();
+    this.notify("idle");
   }
 
   private async drain(): Promise<void> {
@@ -46,6 +58,7 @@ export class SpeechQueue {
         if (!item) break;
         const controller = new AbortController();
         this.current = { controller };
+        this.notify("speaking", item.text);
         try {
           await this.handler(item.text, controller.signal, item.tag);
           item.resolve();
@@ -54,6 +67,7 @@ export class SpeechQueue {
           else item.reject(error);
         } finally {
           this.current = null;
+          if (this.items.length === 0) this.notify("idle");
         }
       }
     } finally {

@@ -1,7 +1,7 @@
 {
   "name": "opencode-voice-plugin",
-  "version": "0.1.0",
-  "description": "Spoken assistant replies for OpenCode, powered by a hosted Kokoro TTS service.",
+  "version": "0.2.1",
+  "description": "Spoken assistant replies and local voice input for OpenCode, powered by Kokoro TTS and Whisper.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,35 +9,50 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./rpc": {
+      "types": "./dist/rpc.d.ts",
+      "import": "./dist/rpc.js"
+    },
+    "./gui-experimental": "./dist/gui-experimental.cjs"
   },
   "files": [
     "dist",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run build:server && npm run build:gui",
+    "build:server": "tsc -p tsconfig.json",
+    "build:gui": "vite build",
+    "dev": "vite build --watch",
+    "dev:server": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.gui.json",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:stt": "npm run build:server && node scripts/transcribe-smoke.mjs"
   },
   "keywords": [
     "opencode",
     "opencode-plugin",
     "tts",
     "voice",
-    "kokoro"
+    "kokoro",
+    "whisper",
+    "speech-to-text"
   ],
   "license": "MIT",
   "engines": {
-    "opencode": "^2.2.0"
+    "opencode": "^2.3.0"
   },
   "dependencies": {
-    "@opencode/plugin": "^2.2.5"
+    "@opencode/plugin": "^2.3.0",
+    "@opencode/schema": "^2.3.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
-    "typescript": "^5.9.3"
+    "solid-js": "^1.9.19",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.8",
+    "vite-plugin-solid": "^2.11.12"
   }
 }

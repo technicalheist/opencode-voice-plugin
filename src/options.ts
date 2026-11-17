@@ -16,6 +16,8 @@ export interface VoicePluginOptions {
   playerArgs?: string[];
   timeoutMs?: number;
   ignoreTitles?: string[];
+  whisperModel?: string;
+  whisperLanguage?: string;
   debug?: boolean;
 }
 
@@ -37,6 +39,8 @@ export interface ResolvedOptions {
   playerArgs: string[];
   timeoutMs: number;
   ignoreTitles: string[];
+  whisperModel?: string;
+  whisperLanguage: string;
   debug: boolean;
 }
 
@@ -55,6 +59,7 @@ const DEFAULTS = {
   chunkChars: 900,
   player: 'auto',
   timeoutMs: 60_000,
+  whisperLanguage: 'en',
   debug: false,
 };
 
@@ -100,6 +105,11 @@ export function resolveOptions(raw: Readonly<Record<string, unknown>> = {}): Res
     playerArgs: asStringList(raw.playerArgs),
     timeoutMs: Math.round(asNumber(raw.timeoutMs, DEFAULTS.timeoutMs, 5000, 180_000)),
     ignoreTitles: asStringList(raw.ignoreTitles),
+    whisperModel:
+      typeof raw.whisperModel === 'string' && raw.whisperModel.trim()
+        ? raw.whisperModel.trim()
+        : undefined,
+    whisperLanguage: asString(raw.whisperLanguage, DEFAULTS.whisperLanguage),
     debug: asBoolean(raw.debug, DEFAULTS.debug),
   };
 }

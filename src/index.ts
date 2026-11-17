@@ -17,7 +17,9 @@ import { synthesizeSpeech } from './kokoro.js';
 import { resolveOptions, type ResolvedOptions } from './options.js';
 import { AudioPlayer } from './player.js';
 import { SpeechQueue } from './queue.js';
+import { Voice } from './rpc.js';
 import { chunkForSpeech, prepareForSpeech } from './speech.js';
+import { transcribeAudio, whisperStatus } from './transcribe.js';
 
 interface TextPart {
   type: string;
@@ -48,7 +50,7 @@ interface VoiceSettings {
   speed: number;
 }
 
-const RUNTIME_VERSION = 2;
+const RUNTIME_VERSION = 3;
 
 interface VoiceRuntime {
   version: number;
@@ -62,6 +64,8 @@ interface VoiceRuntime {
   debugEnabled: boolean;
   tempDir: string;
   explicit: boolean;
+  emitSpeech?: (state: "speaking" | "idle", text?: string) => void;
+  guiLoads?: number;
 }
 
 const globals = globalThis as typeof globalThis & {
@@ -300,6 +304,7 @@ async function createRuntime(
   runtime.queue = new SpeechQueue(
     (text, signal, tag) => speakText(runtime, text, signal, tag),
     (error) => console.error(`[voice] speech failed: ${messageOf(error)}`),
+    (state, text) => runtime.emitSpeech?.(state, text),
   );
   await writeSettingsFile(tempDir, settings);
 
@@ -362,6 +367,79 @@ export default Plugin.define({
     };
 
     const debug = (text: string): void => runtime.debug(text);
+
+    const status = async () => {
+      const whisper = await whisperStatus({
+        model: options.whisperModel,
+        language: options.whisperLanguage,
+      });
+      return {
+        enabled: runtime.settings.enabled,
+        voice: runtime.settings.voice,
+        speed: runtime.settings.speed,
+        speaking: runtime.queue.busy,
+        player: runtime.player.name,
+        modelReady: whisper.ready,
+        model: whisper.model,
+        guiLoads: runtime.guiLoads ?? 0,
+      };
+    };
+
+    let disposeRpc: (() => Promise<void>) | undefined;
+    try {
+      const registration = await ctx.rpc.register(Voice, {
+        transcribe: async (input, callContext) => {
+          const request = input as { audio: string; format: string; language?: string };
+          const audio = Buffer.from(request.audio, 'base64');
+          const text = await transcribeAudio(
+            audio,
+            request.format,
+            {
+              model: options.whisperModel,
+              language: request.language ?? options.whisperLanguage,
+            },
+            runtime.tempDir,
+            callContext.signal,
+          );
+          return { text };
+        },
+        status: async (input) => {
+          const request = input as { source?: string };
+          if (request.source === "gui") runtime.guiLoads = (runtime.guiLoads ?? 0) + 1;
+          return status();
+        },
+        configure: async (input) => {
+          const request = input as { enabled?: boolean; voice?: string; speed?: number };
+          if (typeof request.enabled === 'boolean') runtime.settings.enabled = request.enabled;
+          if (typeof request.voice === 'string' && request.voice.trim()) {
+            runtime.settings.voice = request.voice.trim();
+          }
+          if (typeof request.speed === 'number' && Number.isFinite(request.speed)) {
+            runtime.settings.speed = Math.min(2, Math.max(0.5, request.speed));
+          }
+          persist();
+          return status();
+        },
+        speak: async (input) => {
+          const request = input as { text: string };
+          if (!runtime.settings.enabled) return { ok: false };
+          runtime.queue.push(request.text, 'rpc');
+          return { ok: true };
+        },
+        stop: async () => {
+          runtime.queue.stop();
+          void requestStop(runtime.tempDir);
+          return { stopped: true };
+        },
+      });
+      runtime.emitSpeech = (state, text) => {
+        void registration.events.emit('speech', { state, text: text ?? '' }).catch(() => {});
+      };
+      disposeRpc = () => registration.dispose();
+      debug('registered the voice RPC');
+    } catch (error) {
+      console.error(`[voice] could not register the voice RPC: ${messageOf(error)}`);
+    }
     const inFlight = new Set<string>();
     const pending = new Set<string>();
 
@@ -613,6 +691,7 @@ export default Plugin.define({
     return async () => {
       eventAbort?.abort();
       if (runtime.queue.busy) runtime.queue.stop();
+      await disposeRpc?.().catch(() => {});
       await idleRegistration?.dispose().catch(() => {});
       await toolRegistration?.dispose().catch(() => {});
       await commandRegistration?.dispose().catch(() => {});

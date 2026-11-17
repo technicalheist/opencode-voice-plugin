@@ -1,23 +1,34 @@
 # opencode-voice-plugin
 
-Spoken replies for [OpenCode](https://opencode.ai), powered by the hosted
-[Kokoro](https://kokoro.shivrajan.com) text-to-speech service.
+Spoken replies and local voice input for [OpenCode](https://opencode.ai).
+
+Text-to-speech uses the hosted [Kokoro](https://kokoro.shivrajan.com) service.
+Speech-to-text runs locally with Whisper, so your microphone audio never leaves the
+machine.
 
 When a session finishes, the plugin reads the final assistant reply aloud. Subagent
-replies are announced as they finish, and a `voice_speak` tool lets an agent speak a
-short message on demand. Audio plays back to back through a single queue, so
-utterances never interrupt each other.
+replies are announced as they finish. In the desktop app, a floating pill shows when
+the plugin is listening, transcribing, or speaking, and a waveform button in the
+titlebar starts hands-free conversation mode.
 
 ## Features
 
 - Speaks the final assistant message whenever a session goes idle.
 - Speaks completed subagent replies, with a configurable prefix.
 - Speaks each reply exactly once, even when OpenCode loads the plugin for more than one location.
+- Shows a floating voice pill above the composer: **Listening**, **Transcribing**,
+  **Thinking**, **Speaking**, or **Voice mode**.
+- Adds a waveform button to the titlebar. Click it to toggle voice conversation mode.
+- Click the voice pill to record one request. The transcript goes into the composer
+  so you can edit it before sending.
+- In voice mode, the plugin listens, transcribes, sends the prompt, waits for the
+  answer, speaks it, and listens again.
+- Adds keyboard shortcuts and command-palette entries for talk, voice mode, spoken
+  replies, stop, and a test sentence.
 - Adds a `voice_speak` tool so agents can read short messages aloud.
 - Avoids a duplicate when an agent already spoke its reply through `voice_speak`.
 - Adds a `/voice` command for `on`, `off`, `status`, `test`, `repeat`, `stop`,
   `voice <id>`, and `speed <value>`.
-- Streams nothing and never blocks the agent: speech is queued in the background.
 - Cleans Markdown, code blocks, paths, URLs, tables, and emoji before speaking.
 - Chunks long replies at sentence boundaries.
 - Remembers the enabled state, voice, and speed between restarts.
@@ -26,17 +37,25 @@ utterances never interrupt each other.
 
 ## Requirements
 
-- OpenCode 2.2 or newer.
+- OpenCode 2.3 or newer. The floating controls and voice mode need the desktop app.
 - A reachable Kokoro service. The default is `https://kokoro.shivrajan.com`.
 - One supported audio player:
   - macOS: `afplay`
   - Linux: `mpv`, `ffplay`, `paplay`, `aplay`, `play`, or `cvlc`
   - Windows: PowerShell (`System.Media.SoundPlayer`)
+- For voice input: `ffmpeg`, `whisper-cli`, and a Whisper `ggml` model.
 - Node.js 20 or newer for building.
+
+The plugin finds the model from `whisperModel`, `WHISPER_MODEL`, or the model cache
+used by the OpenCode Custom Harness:
+
+```text
+~/Library/Caches/opencode-harness/ggml-tiny.en.bin
+```
 
 ## Install
 
-Build the package first:
+Build both the server and desktop GUI parts:
 
 ```bash
 cd opencode-voice-plugin
@@ -63,10 +82,26 @@ Then add the local package to your OpenCode configuration, either globally in
 }
 ```
 
-OpenCode reloads plugins when the configuration changes. No restart is needed.
+OpenCode reloads plugins when the configuration changes. A local package path is
+rescanned when it loads. If a GUI part was added to an already loaded package, point
+the config at a fresh copy or restart the app once so OpenCode rereads the package
+exports.
 
-Open an interactive session and run `/voice test`, or ask a question and wait for the
-reply to be spoken.
+## Using voice input
+
+- **One request:** click the voice pill above the composer, speak, and stop. The
+  transcript is inserted into the composer.
+- **Hands-free:** click the waveform button in the titlebar, or press
+  `Cmd/Ctrl+Shift+U`. Speak naturally. The plugin ends each turn after about
+  1.3 seconds of silence, sends the transcript, waits for the reply, speaks it, and
+  listens again.
+- **Stop listening:** click the pill or press the talk shortcut again.
+- **Stop speaking:** click the pill while it shows **Speaking**, or use the
+  command palette.
+- **Talk shortcut:** `Cmd/Ctrl+Shift+M`.
+
+The first microphone use asks macOS for permission. Allow OpenCode in
+**System Settings > Privacy & Security > Microphone**.
 
 ## Options
 
@@ -89,6 +124,8 @@ reply to be spoken.
 | `playerArgs` | string[] | `[]` | Extra arguments passed to the player before the file path. |
 | `timeoutMs` | number | `60000` | Per-request Kokoro timeout. |
 | `ignoreTitles` | string[] | `[]` | Skip sessions whose title contains any of these fragments. |
+| `whisperModel` | string | unset | Path to a Whisper `ggml` model. Overrides `WHISPER_MODEL`. |
+| `whisperLanguage` | string | `en` | Whisper language code. |
 | `debug` | boolean | `false` | Write `[voice]` debug lines to the OpenCode server log. |
 
 ## Commands
@@ -126,14 +163,23 @@ The plugin writes small operational files to the system temp directory under
 - `settings.json`: the current on/off state, voice, and speed.
 - `locks/`: one short-lived marker per spoken reply, used to avoid duplicates.
 
+Transcription audio is written to a temporary folder, converted, transcribed, and
+deleted. The GUI sends the recording to the local server over the OpenCode RPC
+channel; it is not uploaded.
+
 ## How it works
 
-The plugin registers an `experimental.idle` session hook. When a session finishes
-model work, it reads the latest assistant text, cleans it, and appends it to a
-single playback queue. If a session still has subagents running, the parent waits;
+The server part registers an `experimental.idle` session hook. When a session
+finishes model work, it reads the latest assistant text, cleans it, and appends it to
+a single playback queue. If a session still has subagents running, the parent waits;
 each child speaks its own reply when it finishes, and the parent speaks its final
 summary afterwards. A `session.idle` event listener is used automatically when the
 idle hook is unavailable.
+
+The desktop GUI part adds a composer pill and titlebar button. It records with the
+browser `MediaRecorder`, sends the audio to the server over a typed RPC, and shows the
+transcript in the composer or sends it as the next prompt. The server emits
+`speaking` and `idle` RPC events, which drive the pill and the conversation loop.
 
 OpenCode can load a local plugin for both the project and its `.opencode`
 directory. The plugin shares one runtime and one speech queue across those
@@ -148,19 +194,28 @@ written to the system temp directory, played once, and deleted.
   (macOS), `mpv` or `ffplay` (Linux), or set `player` explicitly.
 - **Kokoro errors.** Check `curl https://kokoro.shivrajan.com/health` and set
   `debug: true`, then inspect the OpenCode server log.
+- **No floating pill.** Voice output still works from the server part. The pill and
+  titlebar button need OpenCode Desktop. Reload the window after a rebuild.
+- **Microphone is blocked.** Allow OpenCode in macOS **Privacy & Security >
+  Microphone**, then reload the window.
+- **No transcript.** Check `whisper-cli`, `ffmpeg`, and the model path. The status RPC
+  reports whether the model is ready.
 - **Speech is too long.** Lower `maxChars` or raise `minChars`.
 - **Subagents are too chatty.** Set `speakSubagents: false`.
 - **Do not speak a helper session.** Add part of its title to `ignoreTitles`.
 - **No audio in `opencode run`.** A non-interactive run can exit before playback
-  finishes. Use the TUI or a running server.
+  finishes. Use the desktop app, TUI, or a running server.
 
-## Smoke test
+## Smoke tests
 
 ```bash
 npm run smoke
+npm run smoke:stt
 ```
 
-This synthesizes one sentence through Kokoro and plays it with the detected player.
+`smoke` synthesizes one sentence through Kokoro and plays it with the detected player.
+`smoke:stt` records a sentence with macOS `say`, transcribes it locally, and prints
+the text.
 
 ## Related
 

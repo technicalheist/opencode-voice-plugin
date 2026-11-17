@@ -388,9 +388,8 @@ export default Plugin.define({
             ? "Listening…"
             : transcribing
               ? "Transcribing…"
-              : "Mic";
+              : "🎤\uFE0E";
         return {
-          icon: "outline-audio",
           label,
           tone,
           title: error() || heard() || "Dictate a message",

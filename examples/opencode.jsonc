@@ -9,7 +9,7 @@
         "speed": 1,
         "speakOnIdle": true,
         "speakSubagents": true,
-        "debug": true
+        "debug": false
       }
     }
   ]

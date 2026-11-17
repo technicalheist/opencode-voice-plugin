@@ -22,8 +22,10 @@ speaking: a microphone for dictation and a waveform for hands-free conversation 
   and keeps the next reply silent. It does not auto-send.
 - The waveform icon starts the hands-free loop: listen, transcribe, send, speak the
   answer, and listen again.
-- The icons are grey when idle, amber while listening, green while conversation mode
-  is active, and animate while speaking. Errors turn the microphone red.
+- The icons are grey when idle and green while conversation mode is active. Both
+  show a small spinner while starting, listening, or turning speech into text; the
+  voice icon changes shape while active and speaking. Errors add a red glow to the
+  microphone.
 - Adds keyboard shortcuts and command-palette entries for talk, voice mode, spoken
   replies, stop, and a test sentence.
 - Adds a `voice_speak` tool so agents can read short messages aloud.

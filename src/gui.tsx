@@ -11,6 +11,8 @@ import { Voice } from "./rpc.js";
 type Mode = "idle" | "listening" | "transcribing" | "working" | "speaking";
 type CaptureKind = "dictation" | "conversation";
 
+const SPINNER = ["◐", "◓", "◑", "◒"];
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -36,12 +38,15 @@ export default Plugin.define({
     const [output, setOutput] = createSignal(true);
     const [heard, setHeard] = createSignal("");
     const [error, setError] = createSignal("");
+    const [starting, setStarting] = createSignal(false);
+    const [tick, setTick] = createSignal(0);
+
+    const spinner = () => SPINNER[tick() % SPINNER.length] ?? "◐";
 
     const voice = () => ctx.client.rpc(Voice);
 
     let captureActive = false;
     let captureKind: CaptureKind = "conversation";
-    let starting = false;
     let discardCapture = false;
     let recorder: MediaRecorder | null = null;
     let stream: MediaStream | null = null;
@@ -133,14 +138,14 @@ export default Plugin.define({
     }
 
     async function startListening(kind: CaptureKind = "conversation"): Promise<void> {
-      if (starting || captureActive || recorder) return;
+      if (starting() || captureActive || recorder) return;
       if (mode() === "transcribing" || mode() === "speaking" || mode() === "working") return;
       const session = ctx.sessions.current();
       if (!session) {
         notify("Open a session before using voice mode.", "default");
         return;
       }
-      starting = true;
+      setStarting(true);
       setError("");
       try {
         const info = await session.server.client.session.get({ sessionID: session.id });
@@ -196,7 +201,7 @@ export default Plugin.define({
         setMode("idle");
         notify(`Microphone unavailable: ${messageOf(cause)}`, "error");
       } finally {
-        starting = false;
+        setStarting(false);
       }
     }
 
@@ -374,6 +379,25 @@ export default Plugin.define({
     const micTranscribing = () => mode() === "transcribing" && captureKind === "dictation";
     const micWarn = () => micListening() || micTranscribing();
 
+    const spinnerTimer = window.setInterval(() => setTick((value) => value + 1), 150);
+    const statusTimer = window.setInterval(() => {
+      if (!ctx.sessions.current()) return;
+      const current = mode();
+      if (current !== "idle" && current !== "speaking") return;
+      void voice()
+        .status({ source: "poll" })
+        .then((value) => {
+          const status = value as { speaking: boolean };
+          if (!status.speaking && mode() === "speaking") {
+            setMode("idle");
+            maybeListen();
+          } else if (status.speaking && mode() === "idle") {
+            setMode("speaking");
+          }
+        })
+        .catch(() => {});
+    }, 2000);
+
     ctx.add(Style, `
       [aria-label="Dictate a message"] {
         transition: transform .18s ease, filter .18s ease;
@@ -427,24 +451,33 @@ export default Plugin.define({
     ctx.add(ComposerPill, {
       id: "mic",
       order: 10,
-      show: (): ComposerPillView | undefined => ({
-        label: "🎤\uFE0E",
-        tone: error() ? "danger" : micWarn() ? "warning" : undefined,
-        title: error()
-          ? "Dictate error"
-          : micListening()
-            ? "Dictate: listening"
-            : micTranscribing()
-              ? "Dictate: transcribing"
-              : "Dictate a message",
-        run: () => {
-          if (error()) {
-            setError("");
-            return;
-          }
-          toggleMic();
-        },
-      }),
+      show: (): ComposerPillView | undefined => {
+        const loading = micWarn() || starting();
+        if (loading) {
+          return {
+            label: spinner(),
+            tone: "warning",
+            title: starting()
+              ? "Dictate: starting"
+              : micListening()
+                ? "Dictate: listening"
+                : "Dictate: transcribing",
+            run: () => toggleMic(),
+          };
+        }
+        return {
+          label: "🎤\uFE0E",
+          tone: error() ? "danger" : undefined,
+          title: error() ? "Dictate error" : "Dictate a message",
+          run: () => {
+            if (error()) {
+              setError("");
+              return;
+            }
+            toggleMic();
+          },
+        };
+      },
     });
 
     ctx.add(ComposerPill, {
@@ -452,14 +485,20 @@ export default Plugin.define({
       order: 11,
       show: (): ComposerPillView | undefined => {
         const current = mode();
-        const speaking = current === "speaking";
-        const listening = current === "listening" && captureKind === "conversation";
-        const transcribing = current === "transcribing" && captureKind === "conversation";
-        const on = conversation();
+        const loading = current === "listening" || current === "transcribing" || current === "working" || starting();
+        if (loading) {
+          return {
+            label: spinner(),
+            tone: "warning",
+            title: "Voice conversation mode",
+            run: toggleConversation,
+          };
+        }
+        const live = current === "speaking" || conversation();
         return {
-          icon: "waveform",
+          icon: live && Math.floor(tick() / 2) % 2 === 0 ? "outline-wave-audio" : "waveform",
           label: "",
-          tone: speaking || on ? "success" : listening || transcribing ? "warning" : undefined,
+          tone: live ? "success" : undefined,
           title: "Voice conversation mode",
           run: toggleConversation,
         };
@@ -528,6 +567,8 @@ export default Plugin.define({
     );
 
     return () => {
+      window.clearInterval(spinnerTimer);
+      window.clearInterval(statusTimer);
       unsubscribe();
       stopCapture(true);
     };

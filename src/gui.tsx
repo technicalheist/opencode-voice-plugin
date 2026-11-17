@@ -3,13 +3,13 @@ import {
   Command,
   ComposerPill,
   Plugin,
-  TitlebarItem,
   type ComposerPillTone,
   type ComposerPillView,
 } from "@opencode/plugin/gui";
 import { Voice } from "./rpc.js";
 
 type Mode = "idle" | "listening" | "transcribing" | "working" | "speaking";
+type CaptureKind = "dictation" | "conversation";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -40,6 +40,7 @@ export default Plugin.define({
     const voice = () => ctx.client.rpc(Voice);
 
     let captureActive = false;
+    let captureKind: CaptureKind = "conversation";
     let starting = false;
     let discardCapture = false;
     let recorder: MediaRecorder | null = null;
@@ -56,7 +57,9 @@ export default Plugin.define({
     const maybeListen = () => {
       if (!conversation()) return;
       window.setTimeout(() => {
-        if (conversation() && !captureActive && mode() === "idle") void startListening();
+        if (conversation() && !captureActive && mode() === "idle") {
+          void startListening("conversation");
+        }
       }, 400);
     };
 
@@ -129,7 +132,7 @@ export default Plugin.define({
       if (discard) setMode("idle");
     }
 
-    async function startListening(): Promise<void> {
+    async function startListening(kind: CaptureKind = "conversation"): Promise<void> {
       if (starting || captureActive || recorder) return;
       if (mode() === "transcribing" || mode() === "speaking" || mode() === "working") return;
       const session = ctx.sessions.current();
@@ -146,10 +149,16 @@ export default Plugin.define({
         if (time.busy && (!time.idle || time.busy > time.idle)) {
           if (conversation()) {
             window.setTimeout(() => {
-              if (conversation() && mode() === "idle") void startListening();
+              if (conversation() && mode() === "idle") void startListening("conversation");
             }, 1500);
           }
           return;
+        }
+        captureKind = kind;
+        try {
+          await voice().dictate({ sessionID: session.id, silent: kind === "dictation" });
+        } catch {
+          // The dictation flag is optional; keep recording if an older server does not have it.
         }
         const media = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -210,7 +219,7 @@ export default Plugin.define({
           return;
         }
         setHeard(text);
-        if (conversation()) {
+        if (captureKind === "conversation") {
           await sendPrompt(text);
         } else {
           ctx.screen.current()?.composer.insert(`${text} `);
@@ -278,25 +287,36 @@ export default Plugin.define({
 
     function toggleMic(): void {
       if (captureActive) {
-        stopCapture(false);
+        if (captureKind === "conversation") {
+          setConversation(false);
+          stopCapture(true);
+        } else {
+          stopCapture(false);
+        }
         return;
       }
       if (mode() === "speaking") {
         void stopSpeaking();
         return;
       }
-      void startListening();
+      setConversation(false);
+      void startListening("dictation");
     }
 
     function toggleConversation(): void {
       const next = !conversation();
       setConversation(next);
       if (next) {
-        notify("Voice mode on. Speak naturally.", "success");
-        if (mode() === "idle") void startListening();
+        if (captureActive && captureKind === "dictation") stopCapture(true);
+        void voice()
+          .configure({ enabled: true })
+          .then((value) => setOutput((value as { enabled: boolean }).enabled))
+          .catch(() => {});
+        notify("Conversation mode on. Speak naturally.", "success");
+        if (mode() === "idle") void startListening("conversation");
       } else {
         stopCapture(true);
-        notify("Voice mode off.", "default");
+        notify("Conversation mode off.", "default");
       }
     }
 
@@ -351,47 +371,32 @@ export default Plugin.define({
       .catch(() => {});
 
     ctx.add(ComposerPill, {
-      id: "voice",
+      id: "mic",
       order: 10,
       show: (): ComposerPillView | undefined => {
-        const current = mode();
-        const speaking = current === "speaking";
-        const listening = current === "listening";
-        const transcribing = current === "transcribing";
-        const working = current === "working";
-        const on = conversation();
+        const dictation = captureKind === "dictation";
+        const listening = mode() === "listening" && dictation;
+        const transcribing = mode() === "transcribing" && dictation;
         const tone: ComposerPillTone | undefined = error()
           ? "danger"
-          : speaking
-            ? "success"
-            : listening || transcribing
-              ? "warning"
-              : undefined;
+          : listening || transcribing
+            ? "warning"
+            : undefined;
         const label = error()
-          ? "Voice error"
+          ? "Mic error"
           : listening
             ? "Listening…"
             : transcribing
               ? "Transcribing…"
-              : speaking
-                ? "Speaking"
-                : working
-                  ? "Thinking"
-                  : on
-                    ? "Voice mode"
-                    : "Voice";
+              : "Mic";
         return {
-          icon: on || speaking ? "waveform" : "outline-audio",
+          icon: "outline-audio",
           label,
           tone,
-          title: error() || heard() || "OpenCode voice",
+          title: error() || heard() || "Dictate a message",
           run: () => {
             if (error()) {
               setError("");
-              return;
-            }
-            if (speaking) {
-              void stopSpeaking();
               return;
             }
             toggleMic();
@@ -400,18 +405,42 @@ export default Plugin.define({
       },
     });
 
-    ctx.add(
-      TitlebarItem,
-      (): TitlebarItem => ({
-        id: "voice",
-        label: conversation() ? "Voice mode" : "Voice",
-        title: "OpenCode voice",
-        icon: "waveform",
-        pressed: conversation(),
-        busy: mode() === "transcribing",
-        run: toggleConversation,
-      }),
-    );
+    ctx.add(ComposerPill, {
+      id: "conversation",
+      order: 11,
+      show: (): ComposerPillView | undefined => {
+        const current = mode();
+        const conversationCapture = captureKind === "conversation";
+        const speaking = current === "speaking";
+        const listening = current === "listening" && conversationCapture;
+        const transcribing = current === "transcribing" && conversationCapture;
+        const working = current === "working";
+        const on = conversation();
+        const tone: ComposerPillTone | undefined = speaking || on
+          ? "success"
+          : listening || transcribing
+            ? "warning"
+            : undefined;
+        const label = listening
+          ? "Listening…"
+          : transcribing
+            ? "Transcribing…"
+            : speaking
+              ? "Speaking"
+              : working
+                ? "Thinking"
+                : on
+                  ? "Voice mode"
+                  : "Voice";
+        return {
+          icon: "waveform",
+          label,
+          tone,
+          title: on ? "Conversation mode is on" : "Start conversation mode",
+          run: toggleConversation,
+        };
+      },
+    });
 
     ctx.add(
       Command,

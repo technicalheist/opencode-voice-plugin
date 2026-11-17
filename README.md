@@ -7,22 +7,23 @@ Speech-to-text runs locally with Whisper, so your microphone audio never leaves 
 machine.
 
 When a session finishes, the plugin reads the final assistant reply aloud. Subagent
-replies are announced as they finish. In the desktop app, a floating pill shows when
-the plugin is listening, transcribing, or speaking, and a waveform button in the
-titlebar starts hands-free conversation mode.
+replies are announced as they finish. In the desktop app, two buttons above the
+composer show when the plugin is listening, transcribing, or speaking: **Mic** for
+dictation and **Voice** for hands-free conversation mode.
 
 ## Features
 
 - Speaks the final assistant message whenever a session goes idle.
 - Speaks completed subagent replies, with a configurable prefix.
 - Speaks each reply exactly once, even when OpenCode loads the plugin for more than one location.
-- Shows a floating voice pill above the composer: **Listening**, **Transcribing**,
-  **Thinking**, **Speaking**, or **Voice mode**.
-- Adds a waveform button to the titlebar. Click it to toggle voice conversation mode.
-- Click the voice pill to record one request. The transcript goes into the composer
-  so you can edit it before sending.
-- In voice mode, the plugin listens, transcribes, sends the prompt, waits for the
-  answer, speaks it, and listens again.
+- Adds two voice buttons in the row directly above the composer: **Mic** for
+  dictation and **Voice** for conversation mode.
+- The **Mic** button records one request, writes the transcript into the composer,
+  and keeps the next reply silent. It does not auto-send.
+- The **Voice** button starts the hands-free loop: listen, transcribe, send, speak
+  the answer, and listen again.
+- Both buttons show their state: **Listening**, **Transcribing**, **Thinking**,
+  **Speaking**, or **Voice mode**.
 - Adds keyboard shortcuts and command-palette entries for talk, voice mode, spoken
   replies, stop, and a test sentence.
 - Adds a `voice_speak` tool so agents can read short messages aloud.
@@ -89,16 +90,19 @@ exports.
 
 ## Using voice input
 
-- **One request:** click the voice pill above the composer, speak, and stop. The
-  transcript is inserted into the composer.
-- **Hands-free:** click the waveform button in the titlebar, or press
-  `Cmd/Ctrl+Shift+U`. Speak naturally. The plugin ends each turn after about
-  1.3 seconds of silence, sends the transcript, waits for the reply, speaks it, and
-  listens again.
-- **Stop listening:** click the pill or press the talk shortcut again.
-- **Stop speaking:** click the pill while it shows **Speaking**, or use the
-  command palette.
-- **Talk shortcut:** `Cmd/Ctrl+Shift+M`.
+OpenCode places these two buttons in the row directly above the text area. The
+plugin API does not expose the text area's right edge, so this is the closest
+supported position.
+
+- **Mic (dictation):** click **Mic**, speak, and stop. The transcript is inserted
+  into the composer so you can edit it. The plugin does not send it automatically,
+  and the next reply is not spoken.
+- **Voice (conversation):** click **Voice**, or press `Cmd/Ctrl+Shift+U`. Speak
+  naturally. The plugin ends each turn after about 1.3 seconds of silence, sends
+  the transcript, speaks the answer, and listens again.
+- **Stop listening:** click the active button or press the talk shortcut again.
+- **Stop speaking:** use the stop command in the command palette.
+- **Mic shortcut:** `Cmd/Ctrl+Shift+M`.
 
 The first microphone use asks macOS for permission. Allow OpenCode in
 **System Settings > Privacy & Security > Microphone**.
@@ -176,10 +180,11 @@ each child speaks its own reply when it finishes, and the parent speaks its fina
 summary afterwards. A `session.idle` event listener is used automatically when the
 idle hook is unavailable.
 
-The desktop GUI part adds a composer pill and titlebar button. It records with the
-browser `MediaRecorder`, sends the audio to the server over a typed RPC, and shows the
-transcript in the composer or sends it as the next prompt. The server emits
-`speaking` and `idle` RPC events, which drive the pill and the conversation loop.
+The desktop GUI part adds the **Mic** and **Voice** buttons above the composer. It
+records with the browser `MediaRecorder`, sends the audio to the server over a typed
+RPC, and either inserts the transcript or sends it as the next prompt. The server
+emits `speaking` and `idle` RPC events, which drive the buttons and the conversation
+loop. Dictation mode tells the server to keep the next reply silent.
 
 OpenCode can load a local plugin for both the project and its `.opencode`
 directory. The plugin shares one runtime and one speech queue across those
@@ -194,8 +199,8 @@ written to the system temp directory, played once, and deleted.
   (macOS), `mpv` or `ffplay` (Linux), or set `player` explicitly.
 - **Kokoro errors.** Check `curl https://kokoro.shivrajan.com/health` and set
   `debug: true`, then inspect the OpenCode server log.
-- **No floating pill.** Voice output still works from the server part. The pill and
-  titlebar button need OpenCode Desktop. Reload the window after a rebuild.
+- **No voice buttons.** Voice output still works from the server part. The two
+  buttons need OpenCode Desktop. Reload the window after a rebuild.
 - **Microphone is blocked.** Allow OpenCode in macOS **Privacy & Security >
   Microphone**, then reload the window.
 - **No transcript.** Check `whisper-cli`, `ffmpeg`, and the model path. The status RPC

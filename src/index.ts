@@ -50,7 +50,7 @@ interface VoiceSettings {
   speed: number;
 }
 
-const RUNTIME_VERSION = 3;
+const RUNTIME_VERSION = 4;
 
 interface VoiceRuntime {
   version: number;
@@ -65,6 +65,7 @@ interface VoiceRuntime {
   tempDir: string;
   explicit: boolean;
   emitSpeech?: (state: "speaking" | "idle", text?: string) => void;
+  silentSessions?: Map<string, number>;
   guiLoads?: number;
 }
 
@@ -295,6 +296,7 @@ async function createRuntime(
     }),
     spoken: new Set<string>(),
     recentToolSpeech: new Map(),
+    silentSessions: new Map(),
     debug,
     debugEnabled,
     tempDir,
@@ -426,6 +428,15 @@ export default Plugin.define({
           runtime.queue.push(request.text, 'rpc');
           return { ok: true };
         },
+        dictate: async (input) => {
+          const request = input as { sessionID: string; silent: boolean };
+          if (request.silent) {
+            runtime.silentSessions?.set(request.sessionID, Date.now() + 5 * 60_000);
+          } else {
+            runtime.silentSessions?.delete(request.sessionID);
+          }
+          return { ok: true };
+        },
         stop: async () => {
           runtime.queue.stop();
           void requestStop(runtime.tempDir);
@@ -475,6 +486,17 @@ export default Plugin.define({
 
         const messages = (await ctx.session.context({ sessionID })) as unknown as SpeechMessage[];
         const last = lastAssistantText(messages);
+        const silentUntil = runtime.silentSessions?.get(sessionID);
+        if (silentUntil && silentUntil > Date.now()) {
+          runtime.silentSessions?.delete(sessionID);
+          const lockID = last?.id ?? "silent";
+          if (await acquireSpeechLock(runtime.tempDir, sessionID, lockID)) {
+            if (last) runtime.spoken.add(`${sessionID}:${last.id}`);
+            debug("skipping speech; the next reply is dictation-only");
+          }
+          return;
+        }
+        if (silentUntil) runtime.silentSessions?.delete(sessionID);
         if (!last) {
           if (
             runtime.options.announceFinished &&

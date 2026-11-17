@@ -80,6 +80,23 @@ export const Voice = Rpc.define({
         additionalProperties: false,
       },
     },
+    dictate: {
+      input: {
+        type: "object",
+        properties: {
+          sessionID: { type: "string" },
+          silent: { type: "boolean" },
+        },
+        required: ["sessionID", "silent"],
+        additionalProperties: false,
+      },
+      output: {
+        type: "object",
+        properties: { ok: { type: "boolean" } },
+        required: ["ok"],
+        additionalProperties: false,
+      },
+    },
   },
   events: {
     speech: {

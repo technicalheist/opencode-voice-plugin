@@ -132,13 +132,25 @@ export default Plugin.define({
     async function startListening(): Promise<void> {
       if (starting || captureActive || recorder) return;
       if (mode() === "transcribing" || mode() === "speaking" || mode() === "working") return;
-      if (!ctx.sessions.current()) {
+      const session = ctx.sessions.current();
+      if (!session) {
         notify("Open a session before using voice mode.", "default");
         return;
       }
       starting = true;
       setError("");
       try {
+        const info = await session.server.client.session.get({ sessionID: session.id });
+        if (ctx.signal.aborted) return;
+        const time = info.time;
+        if (time.busy && (!time.idle || time.busy > time.idle)) {
+          if (conversation()) {
+            window.setTimeout(() => {
+              if (conversation() && mode() === "idle") void startListening();
+            }, 1500);
+          }
+          return;
+        }
         const media = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });

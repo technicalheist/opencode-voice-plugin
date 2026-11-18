@@ -8,7 +8,7 @@
         "voice": "af_heart",
         "speed": 1,
         "speakOnIdle": true,
-        "speakSubagents": true,
+        "speakSubagents": false,
         "debug": false
       }
     }

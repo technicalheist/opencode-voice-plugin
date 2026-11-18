@@ -333,9 +333,10 @@ export default Plugin.define({
       try {
         await voice().stop({});
       } catch {
-        return;
+        // Stop locally even if the server call fails.
       }
       setMode("idle");
+      maybeListen();
     }
 
     function toggleMic(): void {
@@ -506,8 +507,8 @@ export default Plugin.define({
             icon: pulseIcon(),
             label: "Speaking",
             tone: "success",
-            title: "Voice conversation mode",
-            run: toggleConversation,
+            title: "Stop speaking",
+            run: () => void stopSpeaking(),
           };
         }
         if (current === "listening" && captureKind === "conversation") {

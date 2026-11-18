@@ -51,7 +51,7 @@ const DEFAULTS = {
   voice: 'af_heart',
   speed: 1,
   speakOnIdle: true,
-  speakSubagents: true,
+  speakSubagents: false,
   announceFinished: false,
   subagentPrefix: 'Subtask finished.',
   minChars: 2,

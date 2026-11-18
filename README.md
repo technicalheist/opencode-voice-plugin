@@ -110,7 +110,9 @@ supported position.
   speech. Music, noise, and single sounds are dropped instead of sent, and
   conversation mode keeps listening.
 - **Stop listening:** click the active icon or press the talk shortcut again.
-- **Stop speaking:** use the stop command in the command palette.
+- **Stop speaking:** click the green **Speaking** button, or use the stop command
+  in the command palette. In conversation mode it stops the audio and starts
+  listening again.
 - **Mic shortcut:** `Cmd/Ctrl+Shift+M`.
 
 The first microphone use asks macOS for permission. Allow OpenCode in
@@ -127,7 +129,7 @@ The first microphone use asks macOS for permission. Allow OpenCode in
 | `voice` | string | `af_heart` | Kokoro voice ID, for example `af_heart`, `af_bella`, or `am_adam`. |
 | `speed` | number | `1` | Speech speed, from `0.5` to `2`. |
 | `speakOnIdle` | boolean | `true` | Speak the final assistant reply when a session becomes idle. |
-| `speakSubagents` | boolean | `true` | Speak replies from child (subagent) sessions. |
+| `speakSubagents` | boolean | `false` | Speak final replies from child (subagent) sessions. Off by default. |
 | `announceFinished` | boolean | `false` | Say "Finished." when a parent session ends with no text. |
 | `subagentPrefix` | string | `Subtask finished.` | Prefix added to subagent replies. Set to `""` to disable. |
 | `minChars` | number | `2` | Skip cleaned replies shorter than this. |
@@ -215,7 +217,8 @@ written to the system temp directory, played once, and deleted.
 - **No transcript.** Check `whisper-cli`, `ffmpeg`, and the model path. The status RPC
   reports whether the model is ready.
 - **Speech is too long.** Lower `maxChars` or raise `minChars`.
-- **Subagents are too chatty.** Set `speakSubagents: false`.
+- **Subagents are too chatty.** Child session replies are skipped by default. Leave
+  `speakSubagents: false` unless you want them read aloud.
 - **Do not speak a helper session.** Add part of its title to `ignoreTitles`.
 - **No audio in `opencode run`.** A non-interactive run can exit before playback
   finishes. Use the desktop app, TUI, or a running server.

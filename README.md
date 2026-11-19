@@ -6,24 +6,26 @@ Text-to-speech uses the hosted [Kokoro](https://kokoro.shivrajan.com) service.
 Speech-to-text runs locally with Whisper, so your microphone audio never leaves the
 machine.
 
-When a session finishes, the plugin reads the final assistant reply aloud. Subagent
-replies are announced as they finish. In the desktop app, two icon buttons in the row
-directly above the composer show when the plugin is listening, transcribing, or
+When a session finishes, the plugin reads the final assistant reply aloud. Replies from
+subagent sessions stay silent by default. In the desktop app, two icon buttons in the
+row directly above the composer show when the plugin is listening, transcribing, or
 speaking: a microphone for dictation and a waveform for hands-free conversation mode.
 
 ## Features
 
 - Speaks the final assistant message whenever a session goes idle.
-- Speaks completed subagent replies, with a configurable prefix.
+- Speaks completed subagent replies only when `speakSubagents` is enabled.
 - Speaks each reply exactly once, even when OpenCode loads the plugin for more than one location.
 - Speaks in short batches of at most two sentences and prepares the next batch while the
   current one plays, so audio starts sooner and continues without long gaps.
 - Adds two icon buttons in the row directly above the composer: a microphone for
   dictation and a waveform for conversation mode.
 - The microphone icon records one request, writes the transcript into the composer,
-  and keeps the next reply silent. It does not auto-send.
+  and keeps the next reply silent. It does not auto-send. Recording ends after five
+  seconds of silence.
 - The waveform icon starts the hands-free loop: listen, transcribe, send, speak the
-  answer, and listen again.
+  answer, and listen again. Each turn is transcribed after five seconds of silence.
+  Conversation mode belongs to one project; switching to another project turns it off.
 - The icons are neutral when idle, with no text. A small spinner appears while the
   plugin starts or waits for the server. Red **Listening** shows while recording;
   green **Speaking** shows while a reply is read aloud.
@@ -97,18 +99,23 @@ OpenCode places these two icon buttons in the row directly above the text area. 
 plugin API does not expose the text area's right edge, so this is the closest
 supported position.
 
-- **Microphone icon (dictation):** click the microphone, speak, and stop. The
-  transcript is inserted into the composer so you can edit it. The plugin does not
-  send it automatically, and the next reply is not spoken.
+- **Microphone icon (dictation):** click the microphone, speak, and pause. After
+  five seconds of silence the transcript is inserted into the composer so you can
+  edit it. The plugin does not send it automatically, and the next reply is not
+  spoken. Click the microphone again to finish early.
 - **Waveform icon (conversation):** click the waveform, or press
-  `Cmd/Ctrl+Shift+U`. Speak naturally. The plugin ends each turn after about 1.3
-  seconds of silence, sends the transcript, speaks the answer, and listens again.
+  `Cmd/Ctrl+Shift+U`. Speak naturally. The plugin waits for five seconds of silence,
+  transcribes the turn, sends it, speaks the answer, and listens again. Conversation
+  mode runs in one project at a time. Switching to another project stops it there, so
+  audio and transcripts cannot cross projects.
 - **Button states:** idle is the icon alone. A spinner means the plugin is starting
   or waiting for the server. Red **Listening** means it is recording. Green
   **Speaking** means audio is actually playing.
 - **Short sounds are ignored.** A recording needs at least two words to count as
   speech. Music, noise, and single sounds are dropped instead of sent, and
   conversation mode keeps listening.
+- **Long turns:** recording stops at two minutes as a safety limit, even if speech
+  continues.
 - **Stop listening:** click the active icon or press the talk shortcut again.
 - **Stop speaking:** click the green **Speaking** button, or use the stop command
   in the command palette. In conversation mode it stops the audio and starts

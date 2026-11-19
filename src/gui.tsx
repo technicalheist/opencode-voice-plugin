@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import {
   Command,
   ComposerPill,
@@ -11,6 +11,9 @@ type Mode = "idle" | "listening" | "transcribing" | "working" | "speaking";
 type CaptureKind = "dictation" | "conversation";
 
 const SPINNER = ["◐", "◓", "◑", "◒"];
+const START_GRACE_MS = 7000;
+const SILENCE_MS = 5000;
+const MAX_CAPTURE_MS = 120_000;
 
 function withTimeout<T>(value: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -69,6 +72,7 @@ export default Plugin.define({
   setup(ctx) {
     const [mode, setMode] = createSignal<Mode>("idle");
     const [conversation, setConversation] = createSignal(false);
+    const [conversationProject, setConversationProject] = createSignal("");
     const [output, setOutput] = createSignal(true);
     const [heard, setHeard] = createSignal("");
     const [error, setError] = createSignal("");
@@ -81,6 +85,7 @@ export default Plugin.define({
 
     let captureActive = false;
     let captureKind: CaptureKind = "conversation";
+    let captureProject = "";
     let discardCapture = false;
     let recorder: MediaRecorder | null = null;
     let stream: MediaStream | null = null;
@@ -88,15 +93,28 @@ export default Plugin.define({
     let silenceTimer: number | undefined;
     let chunks: Blob[] = [];
     let recordedType = "audio/webm";
+    let disposed = false;
 
     const notify = (message: string, variant: "success" | "default" | "error" = "default") => {
       ctx.toast.show({ title: "Voice", description: message, variant, duration: 4000 });
     };
 
+    const projectKey = (): string => {
+      const session = ctx.sessions.current();
+      const root = session?.project?.worktree ?? session?.listedProject?.worktree;
+      return session && root ? `${session.server.id}\n${root}` : "";
+    };
+
+    const conversationActive = (): boolean => {
+      const scope = conversationProject();
+      return conversation() && scope !== "" && projectKey() === scope;
+    };
+
     const maybeListen = () => {
-      if (!conversation()) return;
+      if (disposed || !conversationActive()) return;
       window.setTimeout(() => {
-        if (conversation() && !captureActive && mode() === "idle") {
+        if (disposed) return;
+        if (conversationActive() && !captureActive && mode() === "idle") {
           void startListening("conversation");
         }
       }, 400);
@@ -114,6 +132,7 @@ export default Plugin.define({
       const data = new Uint8Array(analyser.fftSize);
       const startedAt = Date.now();
       let speechStarted = false;
+      let speechStartedAt = 0;
       let lastVoice = startedAt;
 
       silenceTimer = window.setInterval(() => {
@@ -127,18 +146,23 @@ export default Plugin.define({
         const rms = Math.sqrt(sum / data.length);
         const now = Date.now();
         if (rms > 0.02) {
+          if (!speechStarted) speechStartedAt = now;
           speechStarted = true;
           lastVoice = now;
         }
-        if (!speechStarted && now - startedAt > 7000) {
-          stopCapture(true);
+        if (!speechStarted) {
+          if (captureKind === "conversation") {
+            if (now - startedAt > MAX_CAPTURE_MS) stopCapture(true);
+          } else if (now - startedAt > START_GRACE_MS) {
+            stopCapture(true);
+          }
           return;
         }
-        if (speechStarted && now - lastVoice > 1300) {
+        if (now - lastVoice > SILENCE_MS) {
           stopCapture(false);
           return;
         }
-        if (now - startedAt > 20000) stopCapture(false);
+        if (now - speechStartedAt > MAX_CAPTURE_MS) stopCapture(false);
       }, 100);
     };
 
@@ -147,6 +171,7 @@ export default Plugin.define({
       recorder = null;
       if (discardCapture || chunks.length === 0) {
         setMode("idle");
+        maybeListen();
         return;
       }
       const type = current?.mimeType || recordedType;
@@ -172,7 +197,8 @@ export default Plugin.define({
     }
 
     async function startListening(kind: CaptureKind = "conversation"): Promise<void> {
-      if (starting() || captureActive || recorder) return;
+      if (disposed || starting() || captureActive || recorder) return;
+      if (kind === "conversation" && !conversationActive()) return;
       if (mode() === "transcribing" || mode() === "speaking" || mode() === "working") return;
       const session = ctx.sessions.current();
       if (!session) {
@@ -196,9 +222,9 @@ export default Plugin.define({
         }
         if (ctx.signal.aborted) return;
         if (busy) {
-          if (conversation()) {
+          if (conversationActive()) {
             window.setTimeout(() => {
-              if (conversation() && mode() === "idle") void startListening("conversation");
+              if (conversationActive() && mode() === "idle") void startListening("conversation");
             }, 1500);
           }
           return;
@@ -214,12 +240,13 @@ export default Plugin.define({
         const media = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
-        if (ctx.signal.aborted) {
+        if (ctx.signal.aborted || (kind === "conversation" && !conversationActive())) {
           media.getTracks().forEach((track) => track.stop());
           return;
         }
         stream = media;
         captureActive = true;
+        captureProject = projectKey();
         discardCapture = false;
         chunks = [];
         recordedType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -257,6 +284,17 @@ export default Plugin.define({
         maybeListen();
         return;
       }
+      if (captureKind === "conversation") {
+        if (captureProject !== projectKey()) {
+          setMode("idle");
+          notify("Voice input was discarded because the project changed.", "default");
+          return;
+        }
+        if (!conversation()) {
+          setMode("idle");
+          return;
+        }
+      }
       setMode("transcribing");
       try {
         const audio = await blobToBase64(blob);
@@ -270,6 +308,17 @@ export default Plugin.define({
           notify("No speech was detected.", "default");
           maybeListen();
           return;
+        }
+        if (captureKind === "conversation") {
+          if (captureProject !== projectKey()) {
+            setMode("idle");
+            notify("Voice input was discarded because the project changed.", "default");
+            return;
+          }
+          if (!conversation()) {
+            setMode("idle");
+            return;
+          }
         }
         setHeard(text);
         if (captureKind === "conversation") {
@@ -343,6 +392,7 @@ export default Plugin.define({
       if (captureActive) {
         if (captureKind === "conversation") {
           setConversation(false);
+          setConversationProject("");
           stopCapture(true);
         } else {
           stopCapture(false);
@@ -354,25 +404,57 @@ export default Plugin.define({
         return;
       }
       setConversation(false);
+      setConversationProject("");
       void startListening("dictation");
     }
 
     function toggleConversation(): void {
-      const next = !conversation();
-      setConversation(next);
-      if (next) {
-        if (captureActive && captureKind === "dictation") stopCapture(true);
-        void voice()
-          .configure({ enabled: true })
-          .then((value) => setOutput((value as { enabled: boolean }).enabled))
-          .catch(() => {});
-        notify("Conversation mode on. Speak naturally.", "success");
-        if (mode() === "idle") void startListening("conversation");
-      } else {
+      const scope = projectKey();
+      const activeHere = conversation() && scope !== "" && conversationProject() === scope;
+      if (activeHere) {
+        const speaking = mode() === "speaking";
+        setConversation(false);
+        setConversationProject("");
         stopCapture(true);
+        if (speaking) void voice().stop({}).catch(() => {});
         notify("Conversation mode off.", "default");
+        return;
       }
+      if (!scope) {
+        notify("Open a project before using conversation mode.", "default");
+        return;
+      }
+      if (conversation()) {
+        void voice().stop({}).catch(() => {});
+        stopCapture(true);
+      }
+      if (captureActive && captureKind === "dictation") stopCapture(true);
+      setConversationProject(scope);
+      setConversation(true);
+      void voice()
+        .configure({ enabled: true })
+        .then((value) => setOutput((value as { enabled: boolean }).enabled))
+        .catch(() => {});
+      notify("Conversation mode on. Speak naturally.", "success");
+      if (mode() === "idle") void startListening("conversation");
     }
+
+    createEffect(() => {
+      if (!conversation()) return;
+      const scope = conversationProject();
+      const current = projectKey();
+      if (scope && current === scope) return;
+      setConversation(false);
+      setConversationProject("");
+      stopCapture(true);
+      void voice().stop({}).catch(() => {});
+      notify(
+        current
+          ? "Conversation mode stopped. It runs in one project at a time."
+          : "Conversation mode off.",
+        "default",
+      );
+    });
 
     async function toggleOutput(): Promise<void> {
       const next = !output();
@@ -591,6 +673,7 @@ export default Plugin.define({
     );
 
     return () => {
+      disposed = true;
       window.clearInterval(spinnerTimer);
       window.clearInterval(statusTimer);
       unsubscribe();

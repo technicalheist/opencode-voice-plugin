@@ -74,6 +74,7 @@ export default Plugin.define({
     const [conversation, setConversation] = createSignal(false);
     const [conversationProject, setConversationProject] = createSignal("");
     const [output, setOutput] = createSignal(true);
+    const [outputBusy, setOutputBusy] = createSignal(false);
     const [heard, setHeard] = createSignal("");
     const [error, setError] = createSignal("");
     const [starting, setStarting] = createSignal(false);
@@ -431,11 +432,12 @@ export default Plugin.define({
       if (captureActive && captureKind === "dictation") stopCapture(true);
       setConversationProject(scope);
       setConversation(true);
-      void voice()
-        .configure({ enabled: true })
-        .then((value) => setOutput((value as { enabled: boolean }).enabled))
-        .catch(() => {});
-      notify("Conversation mode on. Speak naturally.", "success");
+      notify(
+        output()
+          ? "Conversation mode on. Speak naturally."
+          : "Conversation mode on. Spoken replies are muted.",
+        output() ? "success" : "default",
+      );
       if (mode() === "idle") void startListening("conversation");
     }
 
@@ -457,13 +459,27 @@ export default Plugin.define({
     });
 
     async function toggleOutput(): Promise<void> {
+      if (outputBusy()) return;
       const next = !output();
+      setOutputBusy(true);
       try {
         const result = (await voice().configure({ enabled: next })) as { enabled: boolean };
         setOutput(result.enabled);
-        notify(result.enabled ? "Spoken replies on." : "Spoken replies off.", "success");
+        if (!result.enabled) {
+          await voice().stop({}).catch(() => {});
+          if (mode() === "speaking") {
+            setMode("idle");
+            maybeListen();
+          }
+        }
+        notify(
+          result.enabled ? "Spoken replies on." : "Spoken replies off.",
+          result.enabled ? "success" : "default",
+        );
       } catch (cause) {
         notify(`Could not change voice output: ${messageOf(cause)}`, "error");
+      } finally {
+        setOutputBusy(false);
       }
     }
 
@@ -529,6 +545,29 @@ export default Plugin.define({
         })
         .catch(() => {});
     }, 2000);
+
+    ctx.add(ComposerPill, {
+      id: "output",
+      order: 9,
+      show: (): ComposerPillView | undefined => {
+        if (outputBusy()) {
+          return {
+            label: spinner(),
+            tone: "warning",
+            title: "Spoken replies: updating",
+            run: () => void toggleOutput(),
+          };
+        }
+        return {
+          label: output() ? "🔊\uFE0E" : "🔇\uFE0E",
+          tone: output() ? undefined : "warning",
+          title: output()
+            ? "Spoken replies on. Click to mute."
+            : "Spoken replies off. Click to turn on.",
+          run: () => void toggleOutput(),
+        };
+      },
+    });
 
     ctx.add(ComposerPill, {
       id: "mic",

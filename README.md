@@ -7,9 +7,10 @@ Speech-to-text runs locally with Whisper, so your microphone audio never leaves 
 machine.
 
 When a session finishes, the plugin reads the final assistant reply aloud. Replies from
-subagent sessions stay silent by default. In the desktop app, two icon buttons in the
+subagent sessions stay silent by default. In the desktop app, three icon buttons in the
 row directly above the composer show when the plugin is listening, transcribing, or
-speaking: a microphone for dictation and a waveform for hands-free conversation mode.
+speaking: a speaker for spoken replies, a microphone for dictation, and a waveform for
+hands-free conversation mode.
 
 ## Features
 
@@ -18,8 +19,10 @@ speaking: a microphone for dictation and a waveform for hands-free conversation 
 - Speaks each reply exactly once, even when OpenCode loads the plugin for more than one location.
 - Speaks in short batches of at most two sentences and prepares the next batch while the
   current one plays, so audio starts sooner and continues without long gaps.
-- Adds two icon buttons in the row directly above the composer: a microphone for
-  dictation and a waveform for conversation mode.
+- Adds three icon buttons in the row directly above the composer: a speaker for
+  spoken replies, a microphone for dictation, and a waveform for conversation mode.
+- The speaker icon switches spoken replies on and off. Turning it off stops current
+  playback immediately and remembers the choice across restarts.
 - The microphone icon records one request, writes the transcript into the composer,
   and keeps the next reply silent. It does not auto-send. Recording ends after five
   seconds of silence.
@@ -95,10 +98,13 @@ exports.
 
 ## Using voice input
 
-OpenCode places these two icon buttons in the row directly above the text area. The
+OpenCode places these three icon buttons in the row directly above the text area. The
 plugin API does not expose the text area's right edge, so this is the closest
 supported position.
 
+- **Speaker icon (spoken replies):** click the speaker to mute or unmute all spoken
+  replies. Muting stops the current audio and clears anything waiting to play. A muted
+  speaker means replies stay silent even in conversation mode. The choice is saved.
 - **Microphone icon (dictation):** click the microphone, speak, and pause. After
   five seconds of silence the transcript is inserted into the composer so you can
   edit it. The plugin does not send it automatically, and the next reply is not
@@ -109,8 +115,9 @@ supported position.
   mode runs in one project at a time. Switching to another project stops it there, so
   audio and transcripts cannot cross projects.
 - **Button states:** idle is the icon alone. A spinner means the plugin is starting
-  or waiting for the server. Red **Listening** means it is recording. Green
-  **Speaking** means audio is actually playing.
+  or waiting for the server. A muted speaker means spoken replies are off. Red
+  **Listening** means it is recording. Green **Speaking** means audio is actually
+  playing.
 - **Short sounds are ignored.** A recording needs at least two words to count as
   speech. Music, noise, and single sounds are dropped instead of sent, and
   conversation mode keeps listening.
@@ -129,7 +136,7 @@ The first microphone use asks macOS for permission. Allow OpenCode in
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `enabled` | boolean | `true` | Enable automatic speech at startup. `/voice on` and `/voice off` override and persist it. |
+| `enabled` | boolean | `true` | Enable automatic speech at startup. The speaker button, `/voice on`, and `/voice off` override and persist it. |
 | `baseUrl` | string | `https://kokoro.shivrajan.com` | Kokoro service base URL. |
 | `apiKey` | string | unset | Optional bearer token sent to Kokoro. |
 | `model` | string | `kokoro` | Model name sent to `/v1/audio/speech`. |

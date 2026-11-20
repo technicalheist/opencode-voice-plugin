@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { synthesizeSpeech } from '../dist/kokoro.js';
 import { AudioPlayer } from '../dist/player.js';
 
-const baseUrl = (process.env.KOKORO_BASE_URL ?? 'https://kokoro.shivrajan.com').replace(/\/+$/, '');
+const baseUrl = (process.env.KOKORO_BASE_URL ?? 'http://localhost:8880').replace(/\/+$/, '');
 const voice = process.env.KOKORO_VOICE ?? 'af_heart';
 const text = 'Voice plugin smoke test. Kokoro is connected and playback is working.';
 

@@ -2,7 +2,8 @@
 
 Spoken replies and local voice input for [OpenCode](https://opencode.ai).
 
-Text-to-speech uses the hosted [Kokoro](https://kokoro.shivrajan.com) service.
+Text-to-speech uses a [Kokoro](https://github.com/remsky/Kokoro-FastAPI) service; the
+default is a local one at `http://localhost:8880`.
 Speech-to-text runs locally with Whisper, so your microphone audio never leaves the
 machine.
 
@@ -42,12 +43,14 @@ hands-free conversation mode.
 - Chunks long replies at sentence boundaries.
 - Remembers the enabled state, voice, and speed between restarts.
 - Uses the same Kokoro HTTP API as the rest of the harness:
-  `POST /v1/audio/speech` on `https://kokoro.shivrajan.com`.
+  `POST /v1/audio/speech` on `http://localhost:8880`.
 
 ## Requirements
 
 - OpenCode 2.3 or newer. The floating controls and voice mode need the desktop app.
-- A reachable Kokoro service. The default is `https://kokoro.shivrajan.com`.
+- A reachable Kokoro service. The default is `http://localhost:8880`. If the service
+  is reachable from the internet, set `apiKey` and require it on the server, so only
+  you can use it.
 - One supported audio player:
   - macOS: `afplay`
   - Linux: `mpv`, `ffplay`, `paplay`, `aplay`, `play`, or `cvlc`
@@ -82,7 +85,7 @@ Then add the local package to your OpenCode configuration, either globally in
     {
       "package": "/absolute/path/to/opencode-voice-plugin",
       "options": {
-        "baseUrl": "https://kokoro.shivrajan.com",
+        "baseUrl": "http://localhost:8880",
         "voice": "af_heart",
         "speed": 1
       }
@@ -137,7 +140,7 @@ The first microphone use asks macOS for permission. Allow OpenCode in
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | boolean | `true` | Enable automatic speech at startup. The speaker button, `/voice on`, and `/voice off` override and persist it. |
-| `baseUrl` | string | `https://kokoro.shivrajan.com` | Kokoro service base URL. |
+| `baseUrl` | string | `http://localhost:8880` | Kokoro service base URL. |
 | `apiKey` | string | unset | Optional bearer token sent to Kokoro. |
 | `model` | string | `kokoro` | Model name sent to `/v1/audio/speech`. |
 | `voice` | string | `af_heart` | Kokoro voice ID, for example `af_heart`, `af_bella`, or `am_adam`. |
@@ -222,7 +225,7 @@ written to the system temp directory, played once, and deleted.
 
 - **No audio.** Run `/voice status` to see the detected player. Install `afplay`
   (macOS), `mpv` or `ffplay` (Linux), or set `player` explicitly.
-- **Kokoro errors.** Check `curl https://kokoro.shivrajan.com/health` and set
+- **Kokoro errors.** Check `curl http://localhost:8880/health` and set
   `debug: true`, then inspect the OpenCode server log.
 - **No voice buttons.** Voice output still works from the server part. The two
   buttons need OpenCode Desktop. Reload the window after a rebuild.

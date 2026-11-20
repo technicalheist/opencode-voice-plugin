@@ -46,7 +46,7 @@ export interface ResolvedOptions {
 
 const DEFAULTS = {
   enabled: true,
-  baseUrl: 'https://kokoro.shivrajan.com',
+  baseUrl: 'http://localhost:8880',
   model: 'kokoro',
   voice: 'af_heart',
   speed: 1,
